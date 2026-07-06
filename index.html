@@ -1,1095 +1,1149 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Dashboard Calidad del Aire · Estación San Borja</title>
-<meta name="description" content="Dashboard interactivo de calidad del aire (PM2.5 / PM10) para la estación San Borja, Lima Metropolitana." />
-
-<!-- Tailwind CSS -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pronóstico PM2.5 / PM10 — San Borja, Lima</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<!-- Plotly.js -->
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-<!-- PapaParse -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<style>
-  :root{
-    --accent:#0ea5a3;
-    --accent-dark:#0b7f7d;
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          base:'#0B1120', panel:'#111A2E', card:'#16213B', line:'#1F2C49',
+          eco:'#10B981', skyx:'#38BDF8', warn:'#F97316', danger:'#EF4444', muted:'#94A3B8'
+        },
+        fontFamily: { sans: ['Inter','system-ui','sans-serif'] }
+      }
+    }
   }
-  html,body{ height:100%; }
-  body{ font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  ::-webkit-scrollbar{ width:8px; height:8px; }
-  ::-webkit-scrollbar-track{ background:transparent; }
-  ::-webkit-scrollbar-thumb{ background:#334155; border-radius:8px; }
-  .view{ display:none; }
-  .view.active{ display:block; }
-  .nav-btn.active{ background:rgba(255,255,255,0.08); border-left:3px solid var(--accent); color:#fff; }
-  .nav-btn{ border-left:3px solid transparent; }
-  .kpi-card{ transition: all .25s ease; }
-  .kpi-alert{ background:linear-gradient(135deg,#fef2f2,#fee2e2)!important; border-color:#fca5a5!important; }
-  .kpi-alert .kpi-value{ color:#b91c1c!important; }
-  .kpi-ok{ background:linear-gradient(135deg,#f0fdfa,#ecfdf5)!important; }
-  .card{ background:#fff; border:1px solid #e2e8f0; border-radius:1rem; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
-  input[type=range]{ -webkit-appearance:none; height:6px; border-radius:999px; background:#e2e8f0; }
-  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:16px; height:16px; border-radius:999px; background:var(--accent); cursor:pointer; border:2px solid #fff; box-shadow:0 0 0 1px var(--accent); }
-  input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:999px; background:var(--accent); cursor:pointer; border:2px solid #fff; }
-  .badge{ display:inline-flex; align-items:center; gap:.25rem; padding:.2rem .6rem; border-radius:999px; font-size:.72rem; font-weight:600; }
-  .spin{ animation: spin 1s linear infinite; }
-  @keyframes spin{ to{ transform: rotate(360deg); } }
-  details > summary{ cursor:pointer; list-style:none; }
-  details > summary::-webkit-details-marker{ display:none; }
-  .fade-in{ animation: fadeIn .35s ease; }
-  @keyframes fadeIn{ from{ opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
-  #sidebar::-webkit-scrollbar{ width:0px; }
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  body { background:#0B1120; }
+  ::-webkit-scrollbar { width:8px; height:8px; }
+  ::-webkit-scrollbar-track { background:#0B1120; }
+  ::-webkit-scrollbar-thumb { background:#1F2C49; border-radius:4px; }
+  ::-webkit-scrollbar-thumb:hover { background:#10B981; }
+  .tab-btn { position:relative; transition:color .25s ease; }
+  .tab-btn::after {
+    content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px;
+    background:linear-gradient(90deg,#10B981,#38BDF8); transform:scaleX(0);
+    transform-origin:center; transition:transform .3s ease; border-radius:2px;
+  }
+  .tab-btn.active { color:#F1F5F9; }
+  .tab-btn.active::after { transform:scaleX(1); }
+  .tab-panel { display:none; animation:fadeUp .45s ease both; }
+  .tab-panel.active { display:block; }
+  .sub-panel { display:none; animation:fadeUp .35s ease both; }
+  .sub-panel.active { display:block; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px);} to { opacity:1; transform:translateY(0);} }
+  .sub-btn { transition:all .2s ease; border:1px solid #1F2C49; }
+  .sub-btn.active { background:rgba(16,185,129,.12); border-color:#10B981; color:#F1F5F9; }
+  .pipe-step { cursor:pointer; transition:all .25s ease; }
+  .pipe-step:hover { transform:translateY(-3px); }
+  .pipe-step.selected { border-color:#10B981; box-shadow:0 0 0 1px #10B981, 0 8px 30px -10px rgba(16,185,129,.45); }
+  .glow-eco { box-shadow:0 0 40px -12px rgba(16,185,129,.35); }
+  .kpi-num { font-variant-numeric: tabular-nums; }
+  .badge-pulse { animation:pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.55;} }
+  .seg-btn { transition:all .2s ease; }
+  .seg-btn.active { background:#10B981; color:#06281D; font-weight:700; }
+  table.data-table th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#94A3B8; padding:10px 12px; border-bottom:1px solid #1F2C49; }
+  table.data-table td { padding:9px 12px; border-bottom:1px solid rgba(31,44,73,.55); font-size:12.5px; }
+  .heat-cell { width:56px; height:40px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; border-radius:6px; }
 </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body class="font-sans text-slate-300 antialiased min-h-screen">
 
-<div class="flex h-screen overflow-hidden">
-
-  <!-- ============ SIDEBAR ============ -->
-  <aside id="sidebar" class="w-64 shrink-0 bg-slate-900 text-slate-300 flex flex-col overflow-y-auto">
-    <div class="px-5 py-6 border-b border-slate-800">
-      <div class="flex items-center gap-2">
-        <div class="w-9 h-9 rounded-lg bg-teal-500/20 flex items-center justify-center text-teal-400 text-lg">🌬️</div>
+<!-- ░░ HEADER ░░ -->
+<header class="sticky top-0 z-50 backdrop-blur-xl bg-base/85 border-b border-line">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="flex items-center justify-between py-4">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-eco to-skyx flex items-center justify-center glow-eco shrink-0">
+          <svg class="w-6 h-6 text-base" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999A5.002 5.002 0 003 15z"/>
+          </svg>
+        </div>
         <div>
-          <p class="text-white font-semibold leading-tight text-sm">Calidad del Aire</p>
-          <p class="text-[11px] text-slate-400 leading-tight">Estación San Borja · Lima</p>
+          <h1 class="text-slate-100 font-bold text-sm sm:text-base leading-tight">Pronóstico de PM2.5 y PM10 — San Borja, Lima</h1>
+          <p class="text-xs text-muted">Series temporales &amp; aprendizaje automático · Pronóstico a 1 hora (t+1)</p>
         </div>
       </div>
-    </div>
-
-    <nav class="flex-1 py-4">
-      <p class="px-5 text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">Navegación</p>
-      <button class="nav-btn active w-full text-left px-5 py-3 flex items-center gap-3 text-sm hover:bg-white/5 transition" data-target="view-overview">
-        <span class="text-base">📊</span><span>Vista General &amp; KPIs</span>
-      </button>
-      <button class="nav-btn w-full text-left px-5 py-3 flex items-center gap-3 text-sm hover:bg-white/5 transition" data-target="view-eda">
-        <span class="text-base">📈</span><span>Análisis Exploratorio</span>
-      </button>
-      <button class="nav-btn w-full text-left px-5 py-3 flex items-center gap-3 text-sm hover:bg-white/5 transition" data-target="view-sim">
-        <span class="text-base">🤖</span><span>Simulador de Escenarios</span>
-      </button>
-      <button class="nav-btn w-full text-left px-5 py-3 flex items-center gap-3 text-sm hover:bg-white/5 transition" data-target="view-report">
-        <span class="text-base">📋</span><span>Reporte de Cumplimiento</span>
-      </button>
-    </nav>
-
-    <div class="px-5 py-4 border-t border-slate-800 text-[11px] text-slate-500 leading-relaxed">
-      <p id="data-source-badge" class="mb-1">Cargando datos…</p>
-      <p>ECA PM2.5: <span class="text-slate-300">50 µg/m³</span> (24h)</p>
-      <p>ECA PM10: <span class="text-slate-300">100 µg/m³</span> (24h)</p>
-      <p class="mt-2 text-slate-600">D.S. N° 003-2017-MINAM</p>
-    </div>
-  </aside>
-
-  <!-- ============ MAIN ============ -->
-  <div class="flex-1 flex flex-col overflow-hidden">
-
-    <!-- Top header -->
-    <header class="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-lg font-bold text-slate-800">Dashboard de Calidad del Aire — San Borja</h1>
-        <p class="text-xs text-slate-500">Monitoreo horario de PM2.5 y PM10 · Lima Metropolitana</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <span id="loading-indicator" class="hidden text-xs text-teal-600 flex items-center gap-1">
-          <svg class="spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" stroke-dasharray="40" stroke-linecap="round"/></svg>
-          Procesando…
+      <div class="hidden md:flex items-center gap-2">
+        <span class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full bg-eco/10 text-eco border border-eco/30">
+          <span class="w-1.5 h-1.5 rounded-full bg-eco badge-pulse"></span> LightGBM seleccionado
         </span>
-        <button id="btn-export-csv" class="text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition">
-          ⬇️ Exportar CSV filtrado
-        </button>
+        <span class="text-xs px-3 py-1.5 rounded-full bg-skyx/10 text-skyx border border-skyx/30">2022 – 2023 · 12,029 registros</span>
       </div>
-    </header>
+    </div>
+    <nav class="flex gap-1 sm:gap-6 overflow-x-auto -mb-px text-sm font-medium text-muted">
+      <button class="tab-btn active whitespace-nowrap px-2 py-3" data-tab="tab-inicio">🏠 Inicio</button>
+      <button class="tab-btn whitespace-nowrap px-2 py-3" data-tab="tab-arquitectura">🗂️ Arquitectura y Flujo de Datos</button>
+      <button class="tab-btn whitespace-nowrap px-2 py-3" data-tab="tab-eda">📊 Análisis Exploratorio (EDA)</button>
+      <button class="tab-btn whitespace-nowrap px-2 py-3" data-tab="tab-modelo">🔮 Modelamiento y Pronóstico</button>
+      <button class="tab-btn whitespace-nowrap px-2 py-3" data-tab="tab-conclusiones">⚠️ Conclusiones y Limitaciones</button>
+    </nav>
+  </div>
+</header>
 
-    <!-- Filter bar -->
-    <div class="bg-white border-b border-slate-200 px-6 py-3">
-      <div class="flex flex-wrap items-end gap-5">
-        <div>
-          <label class="block text-[11px] font-semibold text-slate-500 mb-1">Año</label>
-          <select id="filter-year" class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50 focus:ring-2 focus:ring-teal-400 outline-none"></select>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+
+<!-- ══════════════════════ TAB 0 · INICIO / PORTADA ══════════════════════ -->
+<section id="tab-inicio" class="tab-panel active space-y-8">
+
+  <!-- Hero: título y autoría -->
+  <div class="relative overflow-hidden bg-gradient-to-br from-eco/15 via-panel to-skyx/10 border border-line rounded-3xl p-8 sm:p-12 text-center glow-eco">
+    <div class="absolute inset-0 opacity-[0.06] pointer-events-none" aria-hidden="true">
+      <svg class="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M0,70 Q25,40 50,60 T100,45 V100 H0 Z" fill="#10B981"/></svg>
+    </div>
+    <span class="relative inline-flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-full bg-eco/10 text-eco border border-eco/30 uppercase tracking-widest font-bold">
+      <span class="w-1.5 h-1.5 rounded-full bg-eco badge-pulse"></span> Artículo de investigación
+    </span>
+    <h2 class="relative text-2xl sm:text-4xl font-extrabold text-slate-100 leading-tight max-w-4xl mx-auto mt-5">
+      Pronóstico de concentraciones de PM2.5, PM10 en SAN BORJA-Lima mediante modelos de series temporales y aprendizaje automático
+    </h2>
+    <div class="relative mt-7 flex flex-wrap items-center justify-center gap-3">
+      <span class="flex items-center gap-2 text-sm px-4 py-2 rounded-full bg-card/80 border border-line text-slate-200">
+        <span class="w-7 h-7 rounded-full bg-eco/20 border border-eco/40 flex items-center justify-center text-eco text-xs font-bold">NP</span> Nicoll Pariona Rua
+      </span>
+      <span class="flex items-center gap-2 text-sm px-4 py-2 rounded-full bg-card/80 border border-line text-slate-200">
+        <span class="w-7 h-7 rounded-full bg-skyx/20 border border-skyx/40 flex items-center justify-center text-skyx text-xs font-bold">SG</span> Sharon Gonzalo Rojas
+      </span>
+      <span class="flex items-center gap-2 text-sm px-4 py-2 rounded-full bg-card/80 border border-line text-slate-200">
+        <span class="w-7 h-7 rounded-full bg-warn/20 border border-warn/40 flex items-center justify-center text-warn text-xs font-bold">KV</span> Kely Villavicencio Pichihua
+      </span>
+    </div>
+    <p class="relative text-xs sm:text-sm text-muted mt-6">
+      Fuente de Datos: <span class="text-slate-200 font-medium">SENAMHI / MINAM</span> · <span class="text-eco font-medium">Proyecto Integrador CDA 2026</span>
+    </p>
+  </div>
+
+  <!-- Ubicación del caso de estudio -->
+  <div class="grid lg:grid-cols-5 gap-6">
+    <div class="lg:col-span-3 bg-panel border border-line rounded-2xl overflow-hidden">
+      <div class="p-6 pb-4">
+        <h3 class="text-slate-100 font-semibold">📍 Ubicación de la Estación de Monitoreo Analizada</h3>
+        <p class="text-xs text-muted mt-1">Estación San Borja · Lima Metropolitana · Perú &nbsp;—&nbsp; <span class="text-slate-200 font-medium">Lat.: 12°6′31.94″ S · Long.: 77°0′27.68″ W · Alt.: 128 msnm</span></p>
+      </div>
+      <iframe
+        title="Mapa de la Estación San Borja, Lima"
+        class="w-full h-80 sm:h-96 border-0 grayscale-[25%] contrast-[1.05]"
+        loading="lazy"
+        src="https://www.openstreetmap.org/export/embed.html?bbox=-77.0257%2C-12.1219%2C-76.9897%2C-12.0959&amp;layer=mapnik&amp;marker=-12.10887%2C-77.00769">
+      </iframe>
+      <div class="p-4 text-[11px] text-muted border-t border-line">
+        Mapa: © OpenStreetMap contributors · El marcador señala la ubicación exacta de la estación de monitoreo San Borja (12°6′31.94″ S, 77°0′27.68″ W, 128 msnm), cuyos registros horarios (SENAMHI/MINAM) alimentan este estudio.
+      </div>
+    </div>
+    <div class="lg:col-span-2 space-y-4">
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <h3 class="text-slate-100 font-semibold text-sm mb-3">Caso de estudio</h3>
+        <ul class="space-y-3 text-sm leading-relaxed">
+          <li class="flex gap-3"><span class="text-eco shrink-0">◆</span><span><span class="text-slate-100 font-medium">Estación San Borja:</span> estación de monitoreo de calidad del aire y meteorología situada en <span class="text-slate-100">12°6′31.94″ S, 77°0′27.68″ W, a 128 msnm</span>, en el distrito de San Borja, zona residencial-comercial del centro-este de Lima Metropolitana.</span></li>
+          <li class="flex gap-3"><span class="text-eco shrink-0">◆</span><span><span class="text-slate-100 font-medium">Contexto urbano:</span> distrito atravesado por vías de alto tráfico (Av. Javier Prado, Av. Aviación, Av. Angamos), principal fuente del patrón bimodal de contaminación detectado.</span></li>
+          <li class="flex gap-3"><span class="text-eco shrink-0">◆</span><span><span class="text-slate-100 font-medium">Registros analizados:</span> datos horarios de PM2.5, PM10 y meteorología; periodo válido 2022–2023 con 12,029 registros completos.</span></li>
+        </ul>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-panel border border-line rounded-2xl p-4 text-center">
+          <p class="text-[10px] text-muted uppercase tracking-wider">Contaminantes</p>
+          <p class="text-lg font-extrabold text-slate-100 mt-1">PM2.5 · PM10</p>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-4 text-center">
+          <p class="text-[10px] text-muted uppercase tracking-wider">Resolución</p>
+          <p class="text-lg font-extrabold text-slate-100 mt-1">Horaria</p>
+        </div>
+        <div class="bg-panel border border-line rounded-2xl p-4 text-center">
+          <p class="text-[10px] text-muted uppercase tracking-wider">ECA 24h</p>
+          <p class="text-lg font-extrabold text-warn mt-1">50 / 100 <span class="text-xs text-muted">µg/m³</span></p>
+        </div>
+        <div class="bg-panel border border-eco/40 rounded-2xl p-4 text-center glow-eco">
+          <p class="text-[10px] text-eco uppercase tracking-wider">Mejor modelo</p>
+          <p class="text-lg font-extrabold text-eco mt-1">LightGBM</p>
+        </div>
+      </div>
+      <button onclick="document.querySelector('[data-tab=&quot;tab-arquitectura&quot;]').click()"
+        class="w-full bg-gradient-to-r from-eco to-skyx text-base font-bold text-sm py-3 rounded-xl hover:opacity-90 transition-opacity">
+        Explorar el estudio ⟶
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ TAB 1 · ARQUITECTURA ══════════════════════ -->
+<section id="tab-arquitectura" class="tab-panel space-y-8">
+
+  <div>
+    <h2 class="text-2xl font-bold text-slate-100">Arquitectura y Flujo de Datos</h2>
+    <p class="text-sm text-muted mt-1">Del dato institucional crudo (119,832 registros horarios) al dataset analítico consolidado.</p>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-5">
+    <div class="bg-panel border border-line rounded-2xl p-6 hover:border-eco/40 transition-colors">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-eco/15 border border-eco/30 flex items-center justify-center text-eco">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
         </div>
         <div>
-          <label class="block text-[11px] font-semibold text-slate-500 mb-1">Mes</label>
-          <select id="filter-month" class="text-sm border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50 focus:ring-2 focus:ring-teal-400 outline-none"></select>
+          <h3 class="text-slate-100 font-semibold">SENAMHI</h3>
+          <p class="text-xs text-muted">Servicio Nacional de Meteorología e Hidrología del Perú</p>
         </div>
-        <div class="min-w-[190px]">
-          <label class="block text-[11px] font-semibold text-slate-500 mb-1">
-            Rango de hora: <span id="hour-range-label" class="text-teal-600 font-bold">0h – 23h</span>
-          </label>
-          <div class="flex items-center gap-2">
-            <input type="range" id="filter-hour-min" min="0" max="23" value="0" class="w-20">
-            <input type="range" id="filter-hour-max" min="0" max="23" value="23" class="w-20">
-          </div>
+      </div>
+      <p class="text-sm mt-4 leading-relaxed">Provee las <span class="text-slate-100 font-medium">variables meteorológicas horarias</span> (59,352 filas): temperatura (°C), humedad relativa (%), precipitación (mm), velocidad (m/s) y dirección del viento (°). Son los predictores clave de la imputación y del modelamiento.</p>
+      <div class="mt-4 flex flex-wrap gap-2 text-xs">
+        <span class="px-2.5 py-1 rounded-md bg-card border border-line">🌡️ Temperatura</span>
+        <span class="px-2.5 py-1 rounded-md bg-card border border-line">💧 Humedad</span>
+        <span class="px-2.5 py-1 rounded-md bg-card border border-line">🌬️ Viento (vel. y dir.)</span>
+        <span class="px-2.5 py-1 rounded-md bg-card border border-line">🌧️ Precipitación</span>
+      </div>
+    </div>
+    <div class="bg-panel border border-line rounded-2xl p-6 hover:border-skyx/40 transition-colors">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-skyx/15 border border-skyx/30 flex items-center justify-center text-skyx">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12a9.75 9.75 0 1119.5 0 9.75 9.75 0 01-19.5 0zm9.75-4.5v4.5l3 3"/></svg>
         </div>
-        <div class="min-w-[190px]">
-          <label class="block text-[11px] font-semibold text-slate-500 mb-1">
-            Temperatura: <span id="temp-range-label" class="text-teal-600 font-bold">–</span>
-          </label>
-          <div class="flex items-center gap-2">
-            <input type="range" id="filter-temp-min" min="5" max="35" value="5" step="0.5" class="w-20">
-            <input type="range" id="filter-temp-max" min="5" max="35" value="35" step="0.5" class="w-20">
-          </div>
+        <div>
+          <h3 class="text-slate-100 font-semibold">MINAM</h3>
+          <p class="text-xs text-muted">Ministerio del Ambiente del Perú</p>
         </div>
-        <button id="btn-reset-filters" class="text-xs font-semibold text-slate-500 hover:text-teal-600 border border-slate-300 hover:border-teal-400 px-3 py-1.5 rounded-lg transition">↺ Limpiar filtros</button>
-        <div class="ml-auto text-xs text-slate-400" id="filtered-count-label">0 registros</div>
+      </div>
+      <p class="text-sm mt-4 leading-relaxed">Provee los <span class="text-slate-100 font-medium">registros horarios de contaminantes</span> (119,833 filas): concentraciones de PM2.5 y PM10 (µg/m³) de la estación San Borja, y define los Estándares de Calidad Ambiental (ECA) usados como umbrales normativos.</p>
+      <div class="mt-4 flex flex-wrap gap-2 text-xs">
+        <span class="px-2.5 py-1 rounded-md bg-card border border-line">🫁 PM2.5</span>
+        <span class="px-2.5 py-1 rounded-md bg-card border border-line">🌫️ PM10</span>
+        <span class="px-2.5 py-1 rounded-md bg-card border border-line">📏 ECA 50 / 100 µg/m³</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-panel border border-line rounded-2xl p-6">
+    <h3 class="text-slate-100 font-semibold mb-1">Formatos del Ecosistema de Datos</h3>
+    <p class="text-sm text-muted mb-6">La ingesta original proviene de libros Excel (hoja "SAN BORJA"); el pipeline produce los CSV consolidados.</p>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-6 gap-4 items-center">
+      <div class="bg-card border border-line rounded-xl p-4 text-center">
+        <div class="text-2xl mb-2">📗</div>
+        <p class="text-[11px] font-mono text-eco break-all">DATOS_CONTAMINANTE_SBORJA.xlsx</p>
+        <p class="text-[11px] text-muted mt-1.5">119,833 filas × 7 col</p>
+      </div>
+      <div class="bg-card border border-line rounded-xl p-4 text-center">
+        <div class="text-2xl mb-2">📘</div>
+        <p class="text-[11px] font-mono text-skyx break-all">DATOS_METEOROLOGICOS_SBORJA.xlsx</p>
+        <p class="text-[11px] text-muted mt-1.5">59,352 filas × 7 col</p>
+      </div>
+      <div class="hidden lg:flex items-center justify-center text-eco text-2xl font-bold">⟶</div>
+      <div class="bg-card border border-eco/40 rounded-xl p-4 text-center">
+        <div class="text-2xl mb-2">🧾</div>
+        <p class="text-xs font-mono text-slate-100">datafinal.csv</p>
+        <p class="text-[11px] text-muted mt-1.5">119,832 filas × 12 col · unión left join</p>
+      </div>
+      <div class="bg-card border border-eco/40 rounded-xl p-4 text-center">
+        <div class="text-2xl mb-2">✅</div>
+        <p class="text-xs font-mono text-slate-100">completado.csv</p>
+        <p class="text-[11px] text-muted mt-1.5">Imputado con MICE (10 iteraciones)</p>
+      </div>
+      <div class="bg-card border border-eco/40 rounded-xl p-4 text-center">
+        <div class="text-2xl mb-2">🧹</div>
+        <p class="text-xs font-mono text-slate-100">datos_limpios.csv</p>
+        <p class="text-[11px] text-muted mt-1.5">28,167 filas 100% completas</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-panel border border-line rounded-2xl p-6">
+    <h3 class="text-slate-100 font-semibold mb-1">Pipeline de Procesamiento Operacional</h3>
+    <p class="text-sm text-muted mb-6">Haz clic en cada etapa para ver el detalle técnico.</p>
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="pipeline">
+      <div class="pipe-step selected bg-card border border-line rounded-xl p-4 text-center" data-step="0">
+        <div class="w-8 h-8 mx-auto rounded-full bg-eco/15 text-eco flex items-center justify-center text-sm font-bold mb-2">1</div>
+        <p class="text-xs font-semibold text-slate-100 leading-snug">Lectura y Unión de Datos</p>
+        <p class="text-[10px] text-muted mt-1">Left Join · clave temporal</p>
+      </div>
+      <div class="pipe-step bg-card border border-line rounded-xl p-4 text-center" data-step="1">
+        <div class="w-8 h-8 mx-auto rounded-full bg-eco/15 text-eco flex items-center justify-center text-sm font-bold mb-2">2</div>
+        <p class="text-xs font-semibold text-slate-100 leading-snug">Conversión Numérica</p>
+        <p class="text-[10px] text-muted mt-1">Normalización de columnas</p>
+      </div>
+      <div class="pipe-step bg-card border border-line rounded-xl p-4 text-center" data-step="2">
+        <div class="w-8 h-8 mx-auto rounded-full bg-eco/15 text-eco flex items-center justify-center text-sm font-bold mb-2">3</div>
+        <p class="text-xs font-semibold text-slate-100 leading-snug">Imputación Multivariante</p>
+        <p class="text-[10px] text-muted mt-1">MICE · 10 iteraciones</p>
+      </div>
+      <div class="pipe-step bg-card border border-line rounded-xl p-4 text-center" data-step="3">
+        <div class="w-8 h-8 mx-auto rounded-full bg-eco/15 text-eco flex items-center justify-center text-sm font-bold mb-2">4</div>
+        <p class="text-xs font-semibold text-slate-100 leading-snug">Análisis Exploratorio</p>
+        <p class="text-[10px] text-muted mt-1">EDA · outliers · hipótesis</p>
+      </div>
+      <div class="pipe-step bg-card border border-line rounded-xl p-4 text-center" data-step="4">
+        <div class="w-8 h-8 mx-auto rounded-full bg-eco/15 text-eco flex items-center justify-center text-sm font-bold mb-2">5</div>
+        <p class="text-xs font-semibold text-slate-100 leading-snug">Entrenamiento de Modelos</p>
+        <p class="text-[10px] text-muted mt-1">Random Forest · LightGBM</p>
+      </div>
+    </div>
+    <div id="pipe-detail" class="mt-5 bg-card/60 border border-eco/25 rounded-xl p-5 text-sm leading-relaxed"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════ TAB 2 · EDA ══════════════════════ -->
+<section id="tab-eda" class="tab-panel space-y-6">
+
+  <div>
+    <h2 class="text-2xl font-bold text-slate-100">Análisis Exploratorio y Descriptivo (EDA)</h2>
+    <p class="text-sm text-muted mt-1">Resultados reales del notebook <span class="font-mono text-xs">PROYECTOFINAL_PRO.ipynb</span> · periodo de análisis 2022–2023 (12,029 registros horarios).</p>
+  </div>
+
+  <!-- SUBMENÚ EDA -->
+  <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-medium" data-subnav="eda">
+    <button class="sub-btn active px-4 py-2 rounded-lg bg-card text-muted" data-sub="eda-mice">🧩 Imputación MICE</button>
+    <button class="sub-btn px-4 py-2 rounded-lg bg-card text-muted" data-sub="eda-outliers">🚨 Detección y Manejo de Outliers</button>
+    <button class="sub-btn px-4 py-2 rounded-lg bg-card text-muted" data-sub="eda-hipotesis">🧪 Validación de Hipótesis (sec. 3.2)</button>
+    <button class="sub-btn px-4 py-2 rounded-lg bg-card text-muted" data-sub="eda-fluct">🌦️ Fluctuaciones y Viento</button>
+  </div>
+
+  <!-- ── SUB 2.1 · MICE ── -->
+  <div id="eda-mice" class="sub-panel active space-y-6" data-group="eda">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <p class="text-xs text-muted uppercase tracking-wider">Faltantes iniciales PM2.5</p>
+        <p class="kpi-num text-3xl font-extrabold text-danger mt-2">54.08%</p>
+        <p class="text-[11px] text-muted mt-1">64,803 de 119,832 registros</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <p class="text-xs text-muted uppercase tracking-wider">Faltantes iniciales PM10</p>
+        <p class="kpi-num text-3xl font-extrabold text-warn mt-2">35.23%</p>
+        <p class="text-[11px] text-muted mt-1">42,221 de 119,832 registros</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <p class="text-xs text-muted uppercase tracking-wider">Valores completados por MICE</p>
+        <p class="kpi-num text-3xl font-extrabold text-eco mt-2">16,983</p>
+        <p class="text-[11px] text-muted mt-1">8,487 PM2.5 + 8,496 PM10</p>
+      </div>
+      <div class="bg-panel border border-eco/40 rounded-2xl p-5 glow-eco">
+        <p class="text-xs text-eco uppercase tracking-wider">Rango analizado 2022–2023</p>
+        <p class="kpi-num text-3xl font-extrabold text-eco mt-2">100%</p>
+        <p class="text-[11px] text-muted mt-1">12,029 registros sin nulos en PM2.5/PM10</p>
       </div>
     </div>
 
-    <!-- Scrollable content -->
-    <main class="flex-1 overflow-y-auto p-6 space-y-6">
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Datos faltantes por variable (antes de MICE)</h3>
+        <p class="text-xs text-muted mt-1 mb-4">Sobre <span class="font-mono">datafinal.csv</span> · 119,832 registros horarios</p>
+        <div class="relative h-80"><canvas id="chartMissing"></canvas></div>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Resumen de la imputación MICE</h3>
+        <p class="text-xs text-muted mt-1 mb-4">Faltantes antes vs. después y valores completados (conteos reales)</p>
+        <div class="relative h-80"><canvas id="chartMice"></canvas></div>
+      </div>
+    </div>
 
-      <!-- VIEW 1: OVERVIEW -->
-      <section id="view-overview" class="view active space-y-6 fade-in">
-
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div id="kpi-pm25" class="kpi-card card p-5">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">PM2.5 Promedio</p>
-                <p class="kpi-value text-3xl font-extrabold text-slate-800 mt-1" id="kpi-pm25-value">–</p>
-                <p class="text-[11px] text-slate-400 mt-1">µg/m³ · ECA 24h = 50</p>
-              </div>
-              <span id="kpi-pm25-icon" class="text-2xl">🟢</span>
-            </div>
-          </div>
-          <div id="kpi-pm10" class="kpi-card card p-5">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">PM10 Promedio</p>
-                <p class="kpi-value text-3xl font-extrabold text-slate-800 mt-1" id="kpi-pm10-value">–</p>
-                <p class="text-[11px] text-slate-400 mt-1">µg/m³ · ECA 24h = 100</p>
-              </div>
-              <span id="kpi-pm10-icon" class="text-2xl">🟢</span>
-            </div>
-          </div>
-          <div id="kpi-exceed" class="kpi-card card p-5">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">% Registros &gt; ECA</p>
-                <p class="kpi-value text-3xl font-extrabold text-slate-800 mt-1" id="kpi-exceed-value">–</p>
-                <p class="text-[11px] text-slate-400 mt-1" id="kpi-exceed-sub">PM2.5 o PM10 fuera de norma</p>
-              </div>
-              <span id="kpi-exceed-icon" class="text-2xl">⚠️</span>
-            </div>
-          </div>
-          <div class="kpi-card card p-5">
-            <div class="flex items-start justify-between">
-              <div>
-                <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Registros analizados</p>
-                <p class="kpi-value text-3xl font-extrabold text-slate-800 mt-1" id="kpi-count-value">–</p>
-                <p class="text-[11px] text-slate-400 mt-1" id="kpi-period-sub">periodo filtrado</p>
-              </div>
-              <span class="text-2xl">🗂️</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div class="card p-5 lg:col-span-1">
-            <div class="flex items-center justify-between mb-3">
-              <h3 class="font-semibold text-slate-700 text-sm">📍 Ubicación de la Estación</h3>
-              <span id="map-status-badge" class="badge bg-emerald-100 text-emerald-700">Bueno</span>
-            </div>
-            <div id="map" class="rounded-xl overflow-hidden" style="height:320px;"></div>
-            <p class="text-[11px] text-slate-400 mt-2">San Borja, Lima Metropolitana (-12.1075, -76.9997). El color del marcador refleja el estado de la calidad del aire según el promedio filtrado.</p>
-          </div>
-
-          <div class="card p-5 lg:col-span-2">
-            <div class="flex items-center justify-between mb-2">
-              <h3 class="font-semibold text-slate-700 text-sm">📈 Serie Temporal — PM2.5 &amp; PM10</h3>
-              <span class="text-[11px] text-slate-400">Zoom / rango interactivo</span>
-            </div>
-            <div id="chart-timeseries" style="height:320px;"></div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <details class="card p-4">
-            <summary class="flex items-center justify-between font-semibold text-slate-700 text-sm">
-              <span>ℹ️ ¿Qué es el PM2.5?</span><span class="text-slate-400">▾</span>
-            </summary>
-            <p class="text-sm text-slate-500 mt-2 leading-relaxed">
-              El <b>PM2.5</b> son partículas en suspensión con diámetro aerodinámico menor a 2.5 micrómetros (30 veces más delgadas que un cabello humano).
-              Provienen principalmente de la combustión vehicular, quema de biomasa e industria. Por su tamaño ultrafino penetran hasta los alvéolos
-              pulmonares y el torrente sanguíneo, siendo el contaminante con mayor impacto documentado en salud cardiorrespiratoria. El Estándar de
-              Calidad Ambiental (ECA) en Perú establece un límite de <b>50 µg/m³</b> como promedio de 24 horas.
-            </p>
-          </details>
-          <details class="card p-4">
-            <summary class="flex items-center justify-between font-semibold text-slate-700 text-sm">
-              <span>ℹ️ ¿Qué es el PM10?</span><span class="text-slate-400">▾</span>
-            </summary>
-            <p class="text-sm text-slate-500 mt-2 leading-relaxed">
-              El <b>PM10</b> agrupa partículas de hasta 10 micrómetros de diámetro: polvo de calles, obras de construcción, polen y aerosoles marinos,
-              además de la fracción PM2.5. Se depositan principalmente en las vías respiratorias superiores. En Lima, San Borja registra niveles
-              elevados de PM10 por su cercanía a avenidas de alto tránsito y suelos erosionables. El ECA vigente es de <b>100 µg/m³</b> (promedio 24h).
-            </p>
-          </details>
-        </div>
-      </section>
-
-      <!-- VIEW 2: EDA -->
-      <section id="view-eda" class="view space-y-6 fade-in">
-
-        <div class="card p-5">
-          <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
-            <h3 class="font-semibold text-slate-700 text-sm">🔬 Dispersión: Meteorología vs Contaminantes</h3>
-            <div class="flex items-center gap-2 text-xs">
-              <label class="text-slate-500">Eje X:</label>
-              <select id="scatter-x" class="border border-slate-300 rounded-lg px-2 py-1 bg-slate-50">
-                <option value="TEMPERATURA">Temperatura (°C)</option>
-                <option value="HUMEDAD_RELATIVA">Humedad relativa (%)</option>
-                <option value="VELOCIDAD_VIENTO">Velocidad de viento (m/s)</option>
-                <option value="PRECIPITACION">Precipitación (mm)</option>
-              </select>
-              <label class="text-slate-500">Eje Y:</label>
-              <select id="scatter-y" class="border border-slate-300 rounded-lg px-2 py-1 bg-slate-50">
-                <option value="PM25">PM2.5</option>
-                <option value="PM10">PM10</option>
-              </select>
-            </div>
-          </div>
-          <div id="chart-scatter" style="height:380px;"></div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div class="card p-5">
-            <h3 class="font-semibold text-slate-700 text-sm mb-2">🧭 Rosa de los Vientos</h3>
-            <p class="text-[11px] text-slate-400 mb-2">Frecuencia (%) por dirección y rango de velocidad del viento — datos filtrados.</p>
-            <div id="chart-windrose" style="height:400px;"></div>
-          </div>
-          <div class="card p-5">
-            <h3 class="font-semibold text-slate-700 text-sm mb-2">🕐 Perfil Horario Promedio</h3>
-            <p class="text-[11px] text-slate-400 mb-2">Concentración media de PM2.5 y PM10 por hora del día (0–23h).</p>
-            <div id="chart-hourly" style="height:400px;"></div>
-          </div>
-        </div>
-
-        <div class="card p-5">
-          <h3 class="font-semibold text-slate-700 text-sm mb-2">🧮 Matriz de correlación de Pearson</h3>
-          <div id="chart-corr" style="height:340px;"></div>
-        </div>
-      </section>
-
-      <!-- VIEW 3: SIMULATOR -->
-      <section id="view-sim" class="view space-y-6 fade-in">
-
-        <div class="card p-5">
-          <h3 class="font-semibold text-slate-700 text-sm mb-1">🤖 Simulador de Escenarios What-If</h3>
-          <p class="text-xs text-slate-500 mb-4">
-            Modelo de regresión lineal múltiple entrenado sobre los registros históricos de la estación San Borja (2017–2024),
-            con ajuste estacional por hora del día y mes. Mueve los controles para simular condiciones meteorológicas distintas
-            y observa el efecto estimado sobre PM2.5 y PM10.
-          </p>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-6">
-            <div>
-              <label class="text-xs font-semibold text-slate-500 flex justify-between mb-1">
-                <span>🌡️ Temperatura</span><span id="sim-temp-label" class="text-teal-600">20.0 °C</span>
-              </label>
-              <input type="range" id="sim-temp" min="10" max="32" step="0.5" value="20" class="w-full">
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-500 flex justify-between mb-1">
-                <span>💧 Humedad relativa</span><span id="sim-hum-label" class="text-teal-600">84 %</span>
-              </label>
-              <input type="range" id="sim-hum" min="40" max="100" step="1" value="84" class="w-full">
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-500 flex justify-between mb-1">
-                <span>🍃 Velocidad de viento</span><span id="sim-wind-label" class="text-teal-600">1.2 m/s</span>
-              </label>
-              <input type="range" id="sim-wind" min="0" max="6" step="0.1" value="1.2" class="w-full">
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-500 flex justify-between mb-1">
-                <span>🌧️ Precipitación</span><span id="sim-precip-label" class="text-teal-600">0.0 mm</span>
-              </label>
-              <input type="range" id="sim-precip" min="0" max="8" step="0.1" value="0" class="w-full">
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-500 flex justify-between mb-1">
-                <span>🕐 Hora del día</span><span id="sim-hour-label" class="text-teal-600">12h</span>
-              </label>
-              <input type="range" id="sim-hour" min="0" max="23" step="1" value="12" class="w-full">
-            </div>
-            <div>
-              <label class="text-xs font-semibold text-slate-500 flex justify-between mb-1">
-                <span>📅 Mes</span><span id="sim-month-label" class="text-teal-600">Enero</span>
-              </label>
-              <input type="range" id="sim-month" min="1" max="12" step="1" value="1" class="w-full">
-            </div>
-          </div>
-
-          <div class="flex flex-wrap gap-3 mb-2">
-            <button id="btn-sim-reset" class="text-xs font-semibold text-slate-500 hover:text-teal-600 border border-slate-300 hover:border-teal-400 px-3 py-1.5 rounded-lg transition">↺ Restablecer a promedio histórico</button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div class="card p-5 lg:col-span-2">
-            <h3 class="font-semibold text-slate-700 text-sm mb-2">Escenario Actual (filtrado) vs Escenario Simulado</h3>
-            <div id="chart-simulator" style="height:340px;"></div>
-          </div>
-          <div class="card p-5 flex flex-col gap-3">
-            <div id="sim-result-pm25" class="rounded-xl p-4 border">
-              <p class="text-xs font-semibold text-slate-500">PM2.5 simulado</p>
-              <p class="text-2xl font-extrabold" id="sim-pm25-value">–</p>
-              <p class="text-[11px]" id="sim-pm25-status">–</p>
-            </div>
-            <div id="sim-result-pm10" class="rounded-xl p-4 border">
-              <p class="text-xs font-semibold text-slate-500">PM10 simulado</p>
-              <p class="text-2xl font-extrabold" id="sim-pm10-value">–</p>
-              <p class="text-[11px]" id="sim-pm10-status">–</p>
-            </div>
-            <p class="text-[11px] text-slate-400 mt-2 leading-relaxed">
-              Ecuación (simplificada, coeficientes estimados por regresión OLS + ajuste estacional):<br>
-              <code class="text-[10px] block mt-1 bg-slate-50 rounded p-2 border">PM2.5 ≈ 62.2 − 0.997·T − 0.274·H − 1.443·V − 0.847·P + ajuste(hora,mes)</code>
-              <code class="text-[10px] block mt-1 bg-slate-50 rounded p-2 border">PM10 ≈ 233.9 − 3.837·T − 1.187·H − 2.266·V − 1.941·P + ajuste(hora,mes)</code>
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <!-- VIEW 4: COMPLIANCE REPORT -->
-      <section id="view-report" class="view space-y-6 fade-in">
-
-        <div class="card p-5">
-          <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <h3 class="font-semibold text-slate-700 text-sm">📋 Reporte de Cumplimiento Normativo (ECA)</h3>
-            <button id="btn-export-csv-2" class="text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg transition">⬇️ Descargar datos filtrados (.csv)</button>
-          </div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div class="rounded-xl border p-3">
-              <p class="text-[11px] text-slate-500">Días evaluados</p>
-              <p class="text-xl font-bold text-slate-800" id="rep-days-total">–</p>
-            </div>
-            <div class="rounded-xl border p-3">
-              <p class="text-[11px] text-slate-500">Días &gt; ECA PM2.5</p>
-              <p class="text-xl font-bold text-rose-600" id="rep-days-pm25">–</p>
-            </div>
-            <div class="rounded-xl border p-3">
-              <p class="text-[11px] text-slate-500">Días &gt; ECA PM10</p>
-              <p class="text-xl font-bold text-rose-600" id="rep-days-pm10">–</p>
-            </div>
-            <div class="rounded-xl border p-3">
-              <p class="text-[11px] text-slate-500">% Cumplimiento global</p>
-              <p class="text-xl font-bold text-emerald-600" id="rep-compliance-pct">–</p>
-            </div>
-          </div>
-          <div id="chart-daily-eca" style="height:320px;"></div>
-        </div>
-
-        <div class="card p-5">
-          <h3 class="font-semibold text-slate-700 text-sm mb-3">Resumen mensual de cumplimiento</h3>
-          <div class="overflow-x-auto">
-            <table class="w-full text-xs text-left">
-              <thead class="text-slate-500 border-b">
-                <tr>
-                  <th class="py-2 pr-4">Periodo</th>
-                  <th class="py-2 pr-4">Días con datos</th>
-                  <th class="py-2 pr-4">PM2.5 medio</th>
-                  <th class="py-2 pr-4">Días &gt; ECA PM2.5</th>
-                  <th class="py-2 pr-4">PM10 medio</th>
-                  <th class="py-2 pr-4">Días &gt; ECA PM10</th>
-                  <th class="py-2 pr-4">Estado</th>
-                </tr>
-              </thead>
-              <tbody id="table-monthly-body"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-    </main>
-
-    <footer class="bg-white border-t border-slate-200 px-6 py-2 text-[11px] text-slate-400 flex justify-between">
-      <span>Dashboard Calidad del Aire — San Borja · Datos: SENAMHI/estación local, imputación de datos faltantes.</span>
-      <span id="footer-updated">—</span>
-    </footer>
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Registros 100% completos por año</h3>
+        <p class="text-xs text-muted mt-1 mb-4">datos_limpios.csv · 28,167 filas (23.5% del total) · <span class="text-danger font-semibold">2021: 0 registros limpios</span></p>
+        <div class="relative h-72"><canvas id="chartYears"></canvas></div>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold mb-3">Criterio y justificación del método</h3>
+        <ul class="space-y-3 text-sm leading-relaxed">
+          <li class="flex gap-3"><span class="text-eco shrink-0">◆</span><span><span class="text-slate-100 font-medium">MICE (Multivariate Imputation by Chained Equations)</span> con <span class="text-eco font-semibold">10 iteraciones</span> vía <span class="font-mono text-xs">statsmodels.MICEData</span>.</span></li>
+          <li class="flex gap-3"><span class="text-eco shrink-0">◆</span><span>Se imputó PM2.5/PM10 <span class="text-slate-100 font-medium">solo cuando temperatura, humedad y velocidad de viento estaban disponibles</span> en la misma fila (28,167 filas con meteorología completa; 9,673 candidatas a imputación).</span></li>
+          <li class="flex gap-3"><span class="text-eco shrink-0">◆</span><span>Los valores ya existentes de PM2.5 y PM10 <span class="text-slate-100 font-medium">no se modificaron</span>; sin meteorología disponible, el faltante se conservó como S/D (no se inventa dato).</span></li>
+          <li class="flex gap-3"><span class="text-eco shrink-0">◆</span><span>Resultado: PM2.5 pasó de 64,803 → 56,316 faltantes y PM10 de 42,221 → 33,725 a nivel global; en el rango analizado 2022–2023 el dataset quedó <span class="text-eco font-semibold">totalmente completo (12,029 registros)</span>.</span></li>
+        </ul>
+      </div>
+    </div>
   </div>
-</div>
+
+  <!-- ── SUB 2.2 · OUTLIERS ── -->
+  <div id="eda-outliers" class="sub-panel space-y-6" data-group="eda">
+    <div class="bg-panel border border-line rounded-2xl p-6">
+      <div class="flex items-start justify-between flex-wrap gap-2">
+        <div>
+          <h3 class="text-slate-100 font-semibold">Detección de outliers — Criterio IQR</h3>
+          <p class="text-xs text-muted mt-1">Outlier: valor &lt; Q1 − 1.5×IQR o &gt; Q3 + 1.5×IQR · periodo 2022–2023 (12,029 registros)</p>
+        </div>
+        <span class="text-[11px] px-2.5 py-1 rounded-full bg-eco/10 text-eco border border-eco/30">Decisión: se conservan</span>
+      </div>
+      <div class="overflow-x-auto mt-4">
+        <table class="data-table w-full">
+          <thead><tr><th>Variable</th><th>Q1</th><th>Q3</th><th>IQR</th><th>Lím. inferior</th><th>Lím. superior</th><th>N outliers</th><th>% outliers</th></tr></thead>
+          <tbody id="outlierRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Porcentaje de outliers por variable</h3>
+        <p class="text-xs text-muted mt-1 mb-4">PM10 (6.87%) y PM2.5 (5.42%) concentran los valores atípicos</p>
+        <div class="relative h-72"><canvas id="chartOutliers"></canvas></div>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold mb-3">Manejo: ¿por qué se conservan?</h3>
+        <ul class="space-y-3 text-sm leading-relaxed">
+          <li class="flex gap-3"><span class="text-warn shrink-0">◆</span><span><span class="text-slate-100 font-medium">Datos ambientales reales:</span> los extremos de PM2.5/PM10 corresponden a episodios reales de alta contaminación (quemas, polvo, tráfico intenso) — precisamente los eventos más relevantes de pronosticar.</span></li>
+          <li class="flex gap-3"><span class="text-warn shrink-0">◆</span><span><span class="text-slate-100 font-medium">No son errores de medición:</span> se verificó que existen <span class="text-eco font-semibold">0 valores negativos</span> en PM2.5 y PM10; los valores superan el límite IQR pero no son físicamente imposibles ni rompen la consistencia temporal.</span></li>
+          <li class="flex gap-3"><span class="text-warn shrink-0">◆</span><span><span class="text-slate-100 font-medium">Relevancia para los modelos:</span> los modelos predictivos deben aprender también los episodios críticos; eliminarlos empobrecería el entrenamiento.</span></li>
+          <li class="flex gap-3"><span class="text-warn shrink-0">◆</span><span><span class="text-slate-100 font-medium">Robustez del criterio:</span> el IQR no asume normalidad y es adecuado para series de calidad del aire con colas largas hacia valores altos (máx. observados: PM2.5 = 108.3, PM10 = 287.3 µg/m³).</span></li>
+        </ul>
+        <div class="mt-4 bg-card/60 border border-line rounded-xl p-4 text-xs text-muted leading-relaxed">
+          Nota: los outliers superiores de PM10 (&gt;131.3 µg/m³) superan incluso el ECA de 100 µg/m³, confirmando que representan episodios reales de riesgo y no ruido del sensor.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SUB 2.3 · HIPÓTESIS ── -->
+  <div id="eda-hipotesis" class="sub-panel space-y-6" data-group="eda">
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="bg-panel border border-eco/35 rounded-2xl p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-muted">H1</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-eco/15 text-eco border border-eco/30">VALIDADA</span>
+        </div>
+        <h3 class="text-slate-100 font-semibold text-sm mt-2">Patrón bimodal ligado al tráfico</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed">Existe un ciclo diario con pico matutino en horas punta. <span class="text-slate-100">Evidencia:</span> máximos a las 09:00 h (PM2.5 = 23.60, PM10 = 75.82 µg/m³) y repunte nocturno 20:00–23:00 h.</p>
+      </div>
+      <div class="bg-panel border border-eco/35 rounded-2xl p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-muted">H2</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-eco/15 text-eco border border-eco/30">VALIDADA</span>
+        </div>
+        <h3 class="text-slate-100 font-semibold text-sm mt-2">La meteorología modula la contaminación</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed"><span class="text-slate-100">Evidencia (Pearson):</span> temperatura correlaciona negativamente con PM10 (−0.416) y PM2.5 (−0.335); humedad y viento presentan asociaciones débiles (+0.19 / −0.12).</p>
+      </div>
+      <div class="bg-panel border border-eco/35 rounded-2xl p-5">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-muted">H3</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-eco/15 text-eco border border-eco/30">VALIDADA</span>
+        </div>
+        <h3 class="text-slate-100 font-semibold text-sm mt-2">Relaciones no lineales</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed">Los diagramas de dispersión PM vs. meteorología muestran alta dispersión sin tendencia lineal definida (curvas LOWESS no rectas). <span class="text-slate-100">Consecuencia:</span> se justifica el uso de modelos de árboles (Random Forest, LightGBM).</p>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-5 gap-6">
+      <div class="lg:col-span-3 bg-panel border border-line rounded-2xl p-6">
+        <div class="flex items-start justify-between flex-wrap gap-2">
+          <div>
+            <h3 class="text-slate-100 font-semibold">H1 · Perfil horario promedio (datos reales)</h3>
+            <p class="text-xs text-muted mt-1">Promedio por hora del día 2022–2023 vs. umbrales ECA (µg/m³)</p>
+          </div>
+          <span class="text-[11px] px-2.5 py-1 rounded-full bg-warn/10 text-warn border border-warn/30">Pico máximo: 08:00 – 10:00 h</span>
+        </div>
+        <div class="relative h-80 mt-4"><canvas id="chartBimodal"></canvas></div>
+        <div class="mt-4 grid sm:grid-cols-2 gap-3 text-xs">
+          <div class="bg-card/60 border border-line rounded-xl p-4 leading-relaxed">
+            <span class="text-slate-100 font-semibold">🚗 Pico matutino (08:00–10:00 h):</span> máximo diario impulsado por el <span class="text-warn font-medium">tráfico vehicular en horas punta de Lima</span> (PM10 sube de 58.4 a 75.8 µg/m³ entre las 06:00 y 09:00 h).
+          </div>
+          <div class="bg-card/60 border border-line rounded-xl p-4 leading-relaxed">
+            <span class="text-slate-100 font-semibold">🌆 Segundo modo nocturno (20:00–23:00 h):</span> repunte vespertino (PM2.5 vuelve a superar 20 µg/m³) que completa la <span class="text-skyx font-medium">estructura bimodal</span> de la serie.
+          </div>
+        </div>
+      </div>
+      <div class="lg:col-span-2 bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">H2 · Matriz de correlación de Pearson</h3>
+        <p class="text-xs text-muted mt-1 mb-4">Contaminantes y meteorología · 2022–2023</p>
+        <div id="heatmap" class="overflow-x-auto"></div>
+        <div class="mt-4 text-xs text-muted leading-relaxed bg-card/60 border border-line rounded-xl p-4">
+          PM2.5 y PM10 comparten fuente común (r = <span class="text-eco font-semibold">0.785</span>). La temperatura es el modulador meteorológico dominante (r = −0.335 / −0.416): a menor temperatura (inversión térmica costera), mayor acumulación de partículas.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SUB 2.4 · FLUCTUACIONES ── -->
+  <div id="eda-fluct" class="sub-panel space-y-6" data-group="eda">
+    <div class="bg-panel border border-line rounded-2xl p-6">
+      <h3 class="text-slate-100 font-semibold">Fluctuación mensual de contaminantes vs. ECA</h3>
+      <p class="text-xs text-muted mt-1 mb-4">Promedios mensuales reales 2022–2023 · el hueco en jun-2023 corresponde a un mes sin registros del sensor</p>
+      <div class="relative h-80"><canvas id="chartFluctPM"></canvas></div>
+      <p class="text-xs text-muted mt-3 leading-relaxed">El invierno 2022 (may–oct) concentra los niveles más altos: PM10 promedió <span class="text-warn font-semibold">135.5 µg/m³ en septiembre 2022</span>, superando el ECA de 100 µg/m³; PM2.5 llegó a 39.6 µg/m³ en junio 2022.</p>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Fluctuación de temperatura y humedad relativa</h3>
+        <p class="text-xs text-muted mt-1 mb-4">Promedios mensuales reales · eje izq.: °C · eje der.: %</p>
+        <div class="relative h-72"><canvas id="chartFluctMeteo"></canvas></div>
+        <p class="text-xs text-muted mt-3 leading-relaxed">Estacionalidad inversa clásica de Lima: inviernos fríos y húmedos (14.98 °C / 92.2% en ago–jul 2022) y veranos cálidos y menos húmedos (25.3 °C / 75.4% en mar 2023). Coincide con la correlación negativa temperatura–PM.</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Velocidad del viento (promedio mensual)</h3>
+        <p class="text-xs text-muted mt-1 mb-4">Serie disponible desde jul-2022 · media del periodo: 1.07 m/s</p>
+        <div class="relative h-72"><canvas id="chartFluctWind"></canvas></div>
+        <p class="text-xs text-muted mt-3 leading-relaxed">Vientos débiles (0.85–1.24 m/s) durante todo el periodo: poca capacidad de dispersión de contaminantes, lo que favorece la acumulación local de partículas.</p>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-5 gap-6">
+      <div class="lg:col-span-2 bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Rosa de viento — 2022–2023</h3>
+        <p class="text-xs text-muted mt-1 mb-4">Frecuencia (%) por dirección de origen · 12,029 registros</p>
+        <div class="relative h-80"><canvas id="chartRose"></canvas></div>
+        <p class="text-xs text-muted mt-3 leading-relaxed">Dominio absoluto del viento <span class="text-eco font-semibold">Sur (56.1%)</span>, seguido de Oeste (17.4%) y Suroeste (17.0%): flujo persistente desde el litoral que transporta el aire hacia el interior del distrito.</p>
+      </div>
+      <div class="lg:col-span-3 bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Estadísticas descriptivas — Periodo 2022–2023</h3>
+        <p class="text-xs text-muted mt-1 mb-4">12,029 registros horarios completos</p>
+        <div class="overflow-x-auto">
+          <table class="data-table w-full">
+            <thead><tr><th>Variable</th><th>Media</th><th>Desv. Est.</th><th>Mín.</th><th>Mediana</th><th>Máx.</th></tr></thead>
+            <tbody>
+              <tr><td class="text-slate-100 font-medium">PM2.5 (µg/m³)</td><td>19.92</td><td>9.98</td><td>3.00</td><td>17.36</td><td class="text-danger font-semibold">108.30</td></tr>
+              <tr><td class="text-slate-100 font-medium">PM10 (µg/m³)</td><td>64.60</td><td>35.27</td><td>6.34</td><td>53.38</td><td class="text-danger font-semibold">287.30</td></tr>
+              <tr><td class="text-slate-100 font-medium">Temperatura (°C)</td><td>20.37</td><td>3.59</td><td>13.00</td><td>20.20</td><td>31.50</td></tr>
+              <tr><td class="text-slate-100 font-medium">Humedad relativa (%)</td><td>80.70</td><td>9.49</td><td>46.00</td><td>82.00</td><td>100.00</td></tr>
+              <tr><td class="text-slate-100 font-medium">Velocidad viento (m/s)</td><td>1.07</td><td>0.58</td><td>0.00</td><td>1.00</td><td>3.70</td></tr>
+              <tr><td class="text-slate-100 font-medium">Precipitación (mm)</td><td>0.00</td><td>0.03</td><td>0.00</td><td>0.00</td><td>1.30</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-4 text-xs text-muted leading-relaxed bg-card/60 border border-line rounded-xl p-4">
+          La media de PM10 (64.6 µg/m³) se acerca ya al 65% del ECA diario; la media de PM2.5 (19.9 µg/m³) está por debajo del umbral, pero sus máximos horarios (108.3 µg/m³) lo duplican con creces en episodios críticos.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ TAB 3 · MODELAMIENTO ══════════════════════ -->
+<section id="tab-modelo" class="tab-panel space-y-6">
+
+  <div>
+    <h2 class="text-2xl font-bold text-slate-100">Modelamiento y Pronóstico Predictivo</h2>
+    <p class="text-sm text-muted mt-1">Pronóstico a <span class="text-eco font-semibold">1 hora de anticipación (t+1)</span> con variables meteorológicas + memoria temporal (lag 1h y media móvil 3h) · data 2022–2023.</p>
+  </div>
+
+  <!-- SUBMENÚ MODELOS -->
+  <div class="flex flex-wrap gap-2 text-xs sm:text-sm font-medium" data-subnav="mod">
+    <button class="sub-btn active px-4 py-2 rounded-lg bg-card text-muted" data-sub="mod-rf">🌳 Modelo Random Forest</button>
+    <button class="sub-btn px-4 py-2 rounded-lg bg-card text-muted" data-sub="mod-lgbm">⚡ Modelo LightGBM</button>
+    <button class="sub-btn px-4 py-2 rounded-lg bg-card text-muted" data-sub="mod-comp">🏆 Comparación de Modelos</button>
+  </div>
+
+  <!-- ── SUB 3.1 · RANDOM FOREST ── -->
+  <div id="mod-rf" class="sub-panel active space-y-6" data-group="mod">
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <div class="text-eco text-xl mb-2">🧬</div>
+        <h3 class="text-slate-100 font-semibold text-sm">Variables predictoras (8)</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed">Temperatura, humedad relativa, velocidad de viento, precipitación, hora del día, mes, <span class="text-slate-100 font-medium">lag 1h del contaminante</span> y <span class="text-slate-100 font-medium">media móvil de 3h</span>.</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <div class="text-eco text-xl mb-2">✂️</div>
+        <h3 class="text-slate-100 font-semibold text-sm">División cronológica</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed"><span class="text-slate-100 font-medium">80% entrenamiento · 10% validación · 10% test</span>, respetando el orden temporal: el test corresponde a ~2 meses futuros nunca vistos por el modelo.</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <div class="text-eco text-xl mb-2">⚙️</div>
+        <h3 class="text-slate-100 font-semibold text-sm">Configuración</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed"><span class="font-mono text-xs">RandomForestRegressor(random_state=48)</span> — hiperparámetros por defecto de scikit-learn (ensamble de bagging de árboles de decisión).</p>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <div class="flex items-center justify-between">
+          <h3 class="text-slate-100 font-semibold text-sm">Métricas reales · PM2.5</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-skyx/10 text-skyx border border-skyx/30">test futuro</span>
+        </div>
+        <div class="grid grid-cols-4 gap-3 mt-4 text-center">
+          <div><p class="text-[10px] text-muted uppercase">R² Val</p><p class="kpi-num text-lg font-extrabold text-slate-100 mt-1">0.811</p></div>
+          <div><p class="text-[10px] text-muted uppercase">R² Test</p><p class="kpi-num text-lg font-extrabold text-warn mt-1">0.747</p></div>
+          <div><p class="text-[10px] text-muted uppercase">RMSE</p><p class="kpi-num text-lg font-extrabold text-slate-100 mt-1">2.53</p></div>
+          <div><p class="text-[10px] text-muted uppercase">MAE</p><p class="kpi-num text-lg font-extrabold text-slate-100 mt-1">1.68</p></div>
+        </div>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-6">
+        <div class="flex items-center justify-between">
+          <h3 class="text-slate-100 font-semibold text-sm">Métricas reales · PM10</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-skyx/10 text-skyx border border-skyx/30">test futuro</span>
+        </div>
+        <div class="grid grid-cols-4 gap-3 mt-4 text-center">
+          <div><p class="text-[10px] text-muted uppercase">R² Val</p><p class="kpi-num text-lg font-extrabold text-slate-100 mt-1">0.813</p></div>
+          <div><p class="text-[10px] text-muted uppercase">R² Test</p><p class="kpi-num text-lg font-extrabold text-warn mt-1">0.744</p></div>
+          <div><p class="text-[10px] text-muted uppercase">RMSE</p><p class="kpi-num text-lg font-extrabold text-slate-100 mt-1">7.42</p></div>
+          <div><p class="text-[10px] text-muted uppercase">MAE</p><p class="kpi-num text-lg font-extrabold text-slate-100 mt-1">5.36</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-panel border border-line rounded-2xl p-6">
+      <div class="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h3 class="text-slate-100 font-semibold">Real vs Predicción — Random Forest (ventana de test)</h3>
+          <p class="text-xs text-muted mt-1">Emulación de la gráfica de test cronológico (120 h) · dispersión calibrada al RMSE real del modelo</p>
+        </div>
+        <div class="flex rounded-lg overflow-hidden border border-line text-xs" data-predtoggle="rf">
+          <button class="seg-btn active px-4 py-2 bg-card text-slate-300" data-target="pm25">PM2.5 · R² 0.747</button>
+          <button class="seg-btn px-4 py-2 bg-card text-slate-300" data-target="pm10">PM10 · R² 0.744</button>
+        </div>
+      </div>
+      <div class="relative h-96 mt-5"><canvas id="chartRF"></canvas></div>
+      <div class="mt-4 text-xs text-muted leading-relaxed bg-card/60 border border-line rounded-xl p-4">
+        <span class="text-slate-100 font-semibold">Cómo pronostica:</span> para cada hora t, Random Forest recibe la meteorología y el estado reciente del contaminante (valor en t−1 y promedio de las últimas 3 h) y estima la concentración en t+1 promediando cientos de árboles de decisión. En el test futuro pierde precisión (R² cae de ~0.81 a ~0.74), señal de menor capacidad de generalización temporal.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SUB 3.2 · LIGHTGBM ── -->
+  <div id="mod-lgbm" class="sub-panel space-y-6" data-group="mod">
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <div class="text-eco text-xl mb-2">🧬</div>
+        <h3 class="text-slate-100 font-semibold text-sm">Variables predictoras (8)</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed">Mismas 8 variables que Random Forest: meteorología + calendario + <span class="text-slate-100 font-medium">lag 1h</span> + <span class="text-slate-100 font-medium">media móvil 3h</span> del contaminante (9,612 puntos de entrenamiento).</p>
+      </div>
+      <div class="bg-panel border border-line rounded-2xl p-5">
+        <div class="text-eco text-xl mb-2">✂️</div>
+        <h3 class="text-slate-100 font-semibold text-sm">División de datos</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed">Partición <span class="text-slate-100 font-medium">80% entrenamiento / 20% prueba</span> (<span class="font-mono text-xs">train_test_split, random_state=48</span>).</p>
+      </div>
+      <div class="bg-panel border border-eco/40 rounded-2xl p-5 glow-eco">
+        <div class="text-eco text-xl mb-2">⚙️</div>
+        <h3 class="text-slate-100 font-semibold text-sm">Hiperparámetros</h3>
+        <p class="text-xs text-muted mt-2 leading-relaxed font-mono">n_estimators=800 · learning_rate=0.02 · max_depth=4 · subsample=0.8</p>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="bg-panel border border-eco/40 rounded-2xl p-6">
+        <div class="flex items-center justify-between">
+          <h3 class="text-slate-100 font-semibold text-sm">Métricas reales · PM2.5</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-eco/15 text-eco border border-eco/30">LightGBM</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+          <div><p class="text-[10px] text-muted uppercase">R²</p><p class="kpi-num text-xl font-extrabold text-eco mt-1">0.80</p></div>
+          <div><p class="text-[10px] text-muted uppercase">RMSE</p><p class="kpi-num text-xl font-extrabold text-slate-100 mt-1">4.25</p></div>
+          <div><p class="text-[10px] text-muted uppercase">MAE</p><p class="kpi-num text-xl font-extrabold text-slate-100 mt-1">2.67</p></div>
+        </div>
+      </div>
+      <div class="bg-panel border border-eco/40 rounded-2xl p-6">
+        <div class="flex items-center justify-between">
+          <h3 class="text-slate-100 font-semibold text-sm">Métricas reales · PM10</h3>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-eco/15 text-eco border border-eco/30">LightGBM</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+          <div><p class="text-[10px] text-muted uppercase">R²</p><p class="kpi-num text-xl font-extrabold text-eco mt-1">0.87</p></div>
+          <div><p class="text-[10px] text-muted uppercase">RMSE</p><p class="kpi-num text-xl font-extrabold text-slate-100 mt-1">12.21</p></div>
+          <div><p class="text-[10px] text-muted uppercase">MAE</p><p class="kpi-num text-xl font-extrabold text-slate-100 mt-1">8.14</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-5 gap-6">
+      <div class="lg:col-span-3 bg-panel border border-line rounded-2xl p-6">
+        <div class="flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <h3 class="text-slate-100 font-semibold">Real vs Predicción — LightGBM (test)</h3>
+            <p class="text-xs text-muted mt-1">Emulación de la ventana de test (120 h) · dispersión calibrada al RMSE real</p>
+          </div>
+          <div class="flex rounded-lg overflow-hidden border border-line text-xs" data-predtoggle="lgbm">
+            <button class="seg-btn active px-4 py-2 bg-card text-slate-300" data-target="pm10">PM10 · R² 0.87</button>
+            <button class="seg-btn px-4 py-2 bg-card text-slate-300" data-target="pm25">PM2.5 · R² 0.80</button>
+          </div>
+        </div>
+        <div class="relative h-96 mt-5"><canvas id="chartLGBM"></canvas></div>
+      </div>
+      <div class="lg:col-span-2 bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Dispersión: Real vs Predicho</h3>
+        <p class="text-xs text-muted mt-1 mb-4">Línea roja = predicción perfecta (y = x) · <span id="scatterVar" class="text-eco font-semibold">PM10</span></p>
+        <div class="relative h-80"><canvas id="chartScatter"></canvas></div>
+        <div class="mt-4 text-xs text-muted leading-relaxed bg-card/60 border border-line rounded-xl p-4">
+          <span class="text-slate-100 font-semibold">Cómo pronostica:</span> LightGBM construye 800 árboles secuenciales poco profundos (profundidad 4); cada árbol corrige el error residual del anterior con paso de aprendizaje 0.02. La nube de puntos pegada a la diagonal refleja el alto ajuste (R² 0.87 PM10 / 0.80 PM2.5) a 1 hora de anticipación.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SUB 3.3 · COMPARACIÓN ── -->
+  <div id="mod-comp" class="sub-panel space-y-6" data-group="mod">
+    <div class="grid lg:grid-cols-5 gap-6">
+      <div class="lg:col-span-3 bg-panel border border-line rounded-2xl p-6">
+        <h3 class="text-slate-100 font-semibold">Coeficiente de determinación R² en test</h3>
+        <p class="text-xs text-muted mt-1 mb-4">LightGBM supera a Random Forest en ambos contaminantes</p>
+        <div class="relative h-80"><canvas id="chartCompare"></canvas></div>
+      </div>
+      <div class="lg:col-span-2 bg-gradient-to-br from-eco/15 via-panel to-panel border border-eco/40 rounded-2xl p-6 glow-eco flex flex-col justify-center">
+        <p class="text-xs text-eco uppercase tracking-widest font-bold">Modelo ganador</p>
+        <h3 class="text-3xl font-extrabold text-slate-100 mt-2">⚡ LightGBM</h3>
+        <ul class="mt-5 space-y-3 text-sm leading-relaxed">
+          <li class="flex gap-3"><span class="text-eco shrink-0">✔</span><span>Mayor R² en test: <span class="kpi-num text-eco font-bold">0.87</span> (PM10) y <span class="kpi-num text-eco font-bold">0.80</span> (PM2.5) frente a 0.744 y 0.747 de Random Forest.</span></li>
+          <li class="flex gap-3"><span class="text-eco shrink-0">✔</span><span>Boosting secuencial con regularización (profundidad 4, lr 0.02): captura interacciones no lineales sin sobreajustar.</span></li>
+          <li class="flex gap-3"><span class="text-eco shrink-0">✔</span><span>Entrenamiento e inferencia mucho más rápidos: apto para pronóstico operacional horario.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="bg-panel border border-line rounded-2xl p-6">
+      <h3 class="text-slate-100 font-semibold mb-1">Tabla comparativa completa (métricas reales del notebook)</h3>
+      <p class="text-sm text-muted mb-5">RF evaluado con división cronológica 80/10/10 (test = futuro); LightGBM con partición 80/20.</p>
+      <div class="overflow-x-auto">
+        <table class="data-table w-full">
+          <thead><tr><th>Modelo</th><th>Contaminante</th><th>R² Test</th><th>RMSE</th><th>MAE</th><th>División</th><th>Veredicto</th></tr></thead>
+          <tbody>
+            <tr class="bg-eco/5">
+              <td class="text-slate-100 font-bold">LightGBM <span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-eco/15 text-eco border border-eco/30">GANADOR</span></td>
+              <td>PM10</td><td><span class="kpi-num text-eco font-extrabold">0.871</span></td><td>12.21</td><td>8.14</td><td>80/20</td><td class="text-eco text-xs font-medium">Seleccionado ✔</td>
+            </tr>
+            <tr class="bg-eco/5">
+              <td class="text-slate-100 font-bold">LightGBM</td>
+              <td>PM2.5</td><td><span class="kpi-num text-eco font-extrabold">0.802</span></td><td>4.25</td><td>2.67</td><td>80/20</td><td class="text-eco text-xs font-medium">Seleccionado ✔</td>
+            </tr>
+            <tr>
+              <td class="text-slate-100 font-semibold">Random Forest</td>
+              <td>PM10</td><td><span class="kpi-num text-warn font-bold">0.744</span></td><td>7.42</td><td>5.36</td><td>Cronológica 80/10/10</td><td class="text-muted text-xs">Superado</td>
+            </tr>
+            <tr>
+              <td class="text-slate-100 font-semibold">Random Forest</td>
+              <td>PM2.5</td><td><span class="kpi-num text-warn font-bold">0.747</span></td><td>2.53</td><td>1.68</td><td>Cronológica 80/10/10</td><td class="text-muted text-xs">Superado</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-4 grid sm:grid-cols-2 gap-3 text-xs">
+        <div class="bg-card/60 border border-line rounded-xl p-4 leading-relaxed text-muted">
+          <span class="text-slate-100 font-semibold">Lectura de RMSE/MAE:</span> los errores absolutos de cada modelo están en la escala de su contaminante (PM10 varía hasta 287 µg/m³; PM2.5 hasta 108 µg/m³), por lo que la comparación entre modelos se hace por contaminante y con el R² como métrica principal.
+        </div>
+        <div class="bg-card/60 border border-line rounded-xl p-4 leading-relaxed text-muted">
+          <span class="text-slate-100 font-semibold">Nota metodológica:</span> los esquemas de división difieren (cronológico vs. aleatorio). Aun con su test más exigente, Random Forest mostró caída de generalización (0.81 → 0.74), mientras LightGBM sostuvo R² ≥ 0.80 en ambas variables, respaldando su selección.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ TAB 4 · CONCLUSIONES ══════════════════════ -->
+<section id="tab-conclusiones" class="tab-panel space-y-8">
+
+  <div>
+    <h2 class="text-2xl font-bold text-slate-100">Conclusiones y Limitaciones del Sistema</h2>
+    <p class="text-sm text-muted mt-1">Balance transparente de logros técnicos y restricciones del ecosistema de datos.</p>
+  </div>
+
+  <div class="grid lg:grid-cols-2 gap-6">
+    <div class="bg-panel border border-eco/30 rounded-2xl p-6 glow-eco">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-eco/15 border border-eco/30 flex items-center justify-center text-eco">✅</div>
+        <h3 class="text-slate-100 font-semibold">Conclusiones</h3>
+      </div>
+      <ul class="space-y-4 text-sm leading-relaxed">
+        <li class="flex gap-3"><span class="text-eco mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Pipeline de limpieza exitoso:</span> el left join por clave temporal, la conversión numérica y la normalización consolidaron 119,832 registros en <span class="font-mono text-xs">datafinal.csv</span> y produjeron 28,167 filas 100% completas en <span class="font-mono text-xs">datos_limpios.csv</span>.</span></li>
+        <li class="flex gap-3"><span class="text-eco mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Robustez de la imputación MICE:</span> con 10 iteraciones y predictores meteorológicos se completaron 16,983 valores (8,487 PM2.5 + 8,496 PM10), dejando el rango analizado 2022–2023 totalmente completo (12,029 registros).</span></li>
+        <li class="flex gap-3"><span class="text-eco mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Superioridad de LightGBM:</span> R² = 0.87 (PM10) y 0.80 (PM2.5) con RMSE de 12.21 y 4.25 µg/m³, frente a 0.744/0.747 de Random Forest en test futuro — el boosting captura mejor las relaciones no lineales validadas en el EDA.</span></li>
+        <li class="flex gap-3"><span class="text-eco mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Valor operativo:</span> el patrón bimodal (pico 08:00–10:00 h por tráfico), la correlación negativa con la temperatura y el viento sur dominante (56%) habilitan alertas tempranas contrastadas contra los ECA (50 / 100 µg/m³).</span></li>
+      </ul>
+    </div>
+
+    <div class="bg-panel border border-warn/30 rounded-2xl p-6">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-warn/15 border border-warn/30 flex items-center justify-center">⚠️</div>
+        <h3 class="text-slate-100 font-semibold">Limitaciones Reales</h3>
+      </div>
+      <ul class="space-y-4 text-sm leading-relaxed">
+        <li class="flex gap-3"><span class="text-warn mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Año 2021 descartado:</span> la cobertura anual del dataset limpio registra <span class="text-danger font-semibold">0 filas completas en 2021</span>, por lo que el año se excluyó íntegramente y el estudio se acotó a 2022–2023.</span></li>
+        <li class="flex gap-3"><span class="text-warn mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Fallas simultáneas de sensores:</span> los bloques horarios donde fallaron en paralelo los sensores de partículas y los meteorológicos no pudieron reconstruirse — sin predictores, MICE no tiene información sobre la cual condicionar (91,665 filas quedaron fuera, 76.5%).</span></li>
+        <li class="flex gap-3"><span class="text-warn mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Cobertura meteorológica limitada:</span> las variables de viento faltaban en el 75% del histórico crudo y la serie de velocidad solo está disponible de forma continua desde julio 2022.</span></li>
+        <li class="flex gap-3"><span class="text-warn mt-0.5 shrink-0">◆</span>
+          <span><span class="text-slate-100 font-medium">Alcance del pronóstico:</span> el sistema está validado únicamente para 1 hora de anticipación (t+1) y depende del lag reciente del propio contaminante; horizontes mayores requerirían nueva validación.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="bg-gradient-to-r from-eco/10 via-panel to-skyx/10 border border-line rounded-2xl p-6 text-center">
+    <p class="text-sm text-muted leading-relaxed max-w-3xl mx-auto">
+      <span class="text-slate-100 font-semibold">Síntesis:</span> la combinación de ingesta institucional rigurosa (SENAMHI + MINAM), reconstrucción multivariante robusta (MICE, 16,983 valores completados) y gradient boosting eficiente (LightGBM) demuestra que es viable pronosticar la calidad del aire de San Borja con una hora de anticipación y precisión operativa (R² 0.87 PM10 / 0.80 PM2.5).
+    </p>
+  </div>
+</section>
+</main>
+
+<footer class="border-t border-line mt-4">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+    <p>Pronóstico de concentraciones de PM2.5, PM10 en SAN BORJA-Lima mediante modelos de series temporales y aprendizaje automático</p>
+    <p>Nicoll Pariona Rua · Sharon Gonzalo Rojas · Kely Villavicencio Pichihua &nbsp;|&nbsp; SENAMHI / MINAM · Proyecto Integrador CDA 2026</p>
+  </div>
+</footer>
 
 <script>
-const CONFIG = {
-  ECA_PM25: 50,
-  ECA_PM10: 100,
-  STATION: { name: "San Borja", lat: -12.1075, lon: -76.9997 },
-  CSV_URL: "completado.csv",
-  COLORS: { pm25: "#0ea5a3", pm10: "#f97316", eca: "#dc2626", good:"#10b981", moderate:"#f59e0b", bad:"#ef4444" }
+/* ═══════════════ NAVEGACIÓN SPA ═══════════════ */
+const tabButtons = document.querySelectorAll('.tab-btn');
+const tabPanels  = document.querySelectorAll('.tab-panel');
+function refreshCharts(){ setTimeout(() => { Object.values(Chart.instances).forEach(c => c.resize()); }, 60); }
+tabButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    tabButtons.forEach(b => b.classList.remove('active'));
+    tabPanels.forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    refreshCharts();
+  });
+});
+/* Sub-menús (EDA y Modelos) */
+document.querySelectorAll('[data-subnav]').forEach(nav => {
+  const group = nav.dataset.subnav;
+  nav.querySelectorAll('.sub-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      nav.querySelectorAll('.sub-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.sub-panel[data-group="' + group + '"]').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.sub).classList.add('active');
+      refreshCharts();
+    });
+  });
+});
+
+/* ═══════════════ PIPELINE INTERACTIVO ═══════════════ */
+const pipeDetails = [
+  '<span class="text-eco font-semibold">1 · Lectura y Unión de Datos.</span> Se leen las hojas "SAN BORJA" de <span class="font-mono text-xs">DATOS_CONTAMINANTE_SBORJA.xlsx</span> (119,833 filas) y <span class="font-mono text-xs">DATOS_METEOROLOGICOS_SBORJA.xlsx</span> (59,352 filas) y se integran con un <span class="text-slate-100 font-medium">Left Join por clave temporal</span> (fecha-hora), tras eliminar duplicados meteorológicos. Resultado: <span class="font-mono text-xs">datafinal.csv</span> con 119,832 filas × 12 columnas.',
+  '<span class="text-eco font-semibold">2 · Conversión Numérica y Normalización.</span> Se fuerzan tipos numéricos, se normalizan nombres de columnas (sin tildes ni símbolos: TEMPERATURA, HUMEDAD_RELATIVA, VELOCIDAD_VIENTO, DIRECCION_VIENTO, PRECIPITACION) y los vacíos se marcan como S/D.',
+  '<span class="text-eco font-semibold">3 · Imputación Multivariante (MICE).</span> 10 iteraciones sobre las 28,167 filas con meteorología completa; 9,673 filas candidatas. Se completaron <span class="text-slate-100 font-medium">8,487 valores de PM2.5 y 8,496 de PM10</span>, generando <span class="font-mono text-xs">completado.csv</span> y luego <span class="font-mono text-xs">datos_limpios.csv</span> (28,167 filas 100% completas).',
+  '<span class="text-eco font-semibold">4 · Análisis Exploratorio (EDA).</span> Estadísticas descriptivas, detección de outliers por IQR (se conservan: son episodios reales), validación de hipótesis (bimodalidad, correlaciones, no linealidad), fluctuaciones temporales y rosa de viento sobre 2022–2023 (12,029 registros).',
+  '<span class="text-eco font-semibold">5 · Entrenamiento de Modelos Predictivos.</span> Con 8 predictores (meteorología + hora + mes + lag 1h + media móvil 3h) se evaluaron Random Forest (test cronológico: R² 0.747 PM2.5 / 0.744 PM10) y LightGBM (R² 0.80 PM2.5 / 0.87 PM10). <span class="text-slate-100 font-medium">LightGBM gana</span> el pronóstico a t+1 h.'
+];
+const pipeSteps  = document.querySelectorAll('.pipe-step');
+const pipeDetail = document.getElementById('pipe-detail');
+function selectStep(i){
+  pipeSteps.forEach(s => s.classList.remove('selected'));
+  pipeSteps[i].classList.add('selected');
+  pipeDetail.innerHTML = pipeDetails[i];
+}
+pipeSteps.forEach((s,i) => s.addEventListener('click', () => selectStep(i)));
+selectStep(0);
+
+/* ═══════════════ CONFIG GLOBAL CHART.JS ═══════════════ */
+Chart.defaults.color = '#94A3B8';
+Chart.defaults.borderColor = 'rgba(148,163,184,0.12)';
+Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+const tooltipStyle = {
+  backgroundColor:'#16213B', borderColor:'#1F2C49', borderWidth:1,
+  titleColor:'#F1F5F9', bodyColor:'#CBD5E1', padding:12, cornerRadius:10, boxPadding:4
+};
+const legendBottom = { position:'bottom', labels:{ usePointStyle:true, padding:16, font:{ size:11 } } };
+
+/* ═══════════════ DATOS REALES DEL NOTEBOOK ═══════════════ */
+// Faltantes iniciales por variable (datafinal.csv, 119,832 filas)
+const missVars = ['PM2.5','PM10','Temperatura','Humedad rel.','Precipitación','Vel. viento','Dir. viento'];
+const missPct  = [54.08, 35.23, 66.85, 66.86, 65.37, 75.00, 75.00];
+const missCnt  = [64803, 42221, 80107, 80119, 78337, 89871, 89871];
+
+// Resumen MICE (conteos reales)
+const miceBefore    = [64803, 42221];
+const miceAfter     = [56316, 33725];
+const miceCompleted = [8487, 8496];
+
+// Registros completos por año (datos_limpios.csv)
+const yearLabels = ['2017','2018','2019','2020','2021','2022','2023','2024'];
+const yearCounts = [2404, 4443, 6963, 1716, 0, 3646, 8383, 612];
+
+// Outliers IQR (2022–2023)
+const outlierData = [
+  ['PM2.5 (µg/m³)', 13.71, 23.28, 9.57, -0.645, 37.635, 652, 5.42],
+  ['PM10 (µg/m³)', 40.66, 76.92, 36.26, -13.73, 131.31, 826, 6.87],
+  ['Temperatura (°C)', 18.10, 22.70, 4.60, 11.20, 29.60, 78, 0.65],
+  ['Humedad relativa (%)', 74.00, 87.00, 13.00, 54.50, 106.50, 53, 0.44],
+  ['Velocidad viento (m/s)', 0.60, 1.40, 0.80, -0.60, 2.60, 157, 1.31],
+  ['Precipitación (mm)', 0.00, 0.00, 0.00, 0.00, 0.00, 88, 0.73]
+];
+
+// Perfil horario promedio REAL (0–23 h, 2022–2023)
+const hours = Array.from({length:24}, (_,h) => (h<10?'0':'') + h + ':00');
+const pm25Hourly = [19.84,20.18,20.37,19.74,19.83,19.49,19.46,20.35,22.07,23.60,23.32,21.83,19.97,19.07,18.20,17.54,17.16,17.31,17.58,18.58,19.78,20.83,21.27,20.87];
+const pm10Hourly = [64.13,62.91,61.51,59.88,59.53,58.11,58.38,61.65,69.47,75.82,74.43,71.10,66.06,62.97,59.47,59.96,60.56,62.24,64.13,66.79,68.20,68.48,68.62,65.78];
+
+// Matriz de correlación de Pearson REAL
+const corrVars = ['PM2.5','PM10','TEMP','HUM','VIENTO','PRECIP'];
+const corrMatrix = [
+  [1.000, 0.785,-0.335, 0.189,-0.122,-0.005],
+  [0.785, 1.000,-0.416, 0.116,-0.030,-0.006],
+  [-0.335,-0.416, 1.000,-0.724, 0.161,-0.009],
+  [0.189, 0.116,-0.724, 1.000,-0.278, 0.066],
+  [-0.122,-0.030, 0.161,-0.278, 1.000,-0.030],
+  [-0.005,-0.006,-0.009, 0.066,-0.030, 1.000]
+];
+
+// Series mensuales REALES 2022–2023 (null = mes sin datos del sensor)
+const monthLabels = ['Ene 22','Feb 22','Mar 22','Abr 22','May 22','Jun 22','Jul 22','Ago 22','Sep 22','Oct 22','Nov 22','Dic 22','Ene 23','Feb 23','Mar 23','Abr 23','May 23','Jun 23','Jul 23','Ago 23','Sep 23','Oct 23','Nov 23','Dic 23'];
+const pm25Monthly = [13.34,19.29,20.77,25.53,36.42,39.60,34.24,33.63,28.89,24.61,17.54,16.31,17.93,15.93,14.78,20.71,28.34,null,19.55,18.26,19.07,20.02,17.55,16.53];
+const pm10Monthly = [45.40,62.31,67.20,70.97,89.64,92.17,81.84,108.41,135.47,114.66,50.58,50.00,52.10,46.97,47.76,67.25,92.89,null,55.01,52.87,58.89,55.19,50.23,46.10];
+const tempMonthly = [22.63,22.72,22.64,19.79,17.55,16.22,15.41,14.98,15.35,15.79,18.44,21.25,22.11,24.77,25.32,25.23,21.89,21.10,20.47,20.23,18.92,19.15,19.89,21.67];
+const humMonthly  = [81.98,80.82,80.21,85.73,88.52,89.74,92.16,91.09,83.93,83.25,80.47,79.79,79.35,78.04,75.41,75.38,79.85,77.13,78.14,78.18,83.66,84.86,81.21,78.84];
+const windMonthly = [null,null,null,null,null,null,0.92,0.96,1.02,1.10,1.08,1.15,0.85,1.07,0.87,1.24,1.18,1.22,1.17,1.16,1.02,1.00,1.04,1.06];
+
+// Rosa de viento REAL (% del tiempo por dirección de origen)
+const roseLabels = ['N','NE','E','SE','S','SO','O','NO'];
+const roseTotal  = [0.49, 0.22, 0.44, 6.43, 56.11, 17.01, 17.38, 1.91];
+const roseSpeed  = {
+  '0–1 m/s': [0.47,0.22,0.43,2.97,17.02,14.42,10.22,1.38],
+  '1–2 m/s': [0.02,0.00,0.01,3.12,31.61,2.57,7.09,0.53],
+  '2–4 m/s': [0.00,0.00,0.00,0.34,7.48,0.02,0.07,0.00]
 };
 
-const MODEL = {
-  pm25: { intercept: 62.20, temp: -0.9965, hum: -0.2741, wind: -1.4434, precip: -0.8467 },
-  pm10: { intercept: 233.93, temp: -3.8372, hum: -1.1874, wind: -2.2658, precip: -1.9410 },
-  hourDevPM25: [-0.56,-0.80,-0.29,-0.98,-1.39,-1.62,-1.24,-0.14,1.66,3.33,4.03,3.02,1.62,0.15,-1.21,-2.18,-2.23,-1.88,-0.93,-0.30,0.11,0.72,0.74,0.11],
-  hourDevPM10: [-2.66,-4.13,-6.05,-8.09,-9.26,-10.07,-9.23,-3.63,6.26,13.04,10.88,6.32,1.09,-4.12,-6.01,-5.15,-3.07,0.11,3.06,6.44,7.82,7.58,5.63,1.88],
-  monthDevPM25: [-3.02,-3.34,-3.37,0.73,2.13,-1.53,0.55,3.94,3.21,1.66,-1.57,-1.33],
-  monthDevPM10: [-7.61,-4.31,-10.19,3.59,1.37,-11.71,-3.90,7.67,17.83,16.16,-4.69,-7.90],
-  weight: 0.6
+// Métricas reales de los modelos
+const METRICS = {
+  rf:   { pm25:{ r2:0.747, rmse:2.53,  mae:1.68 }, pm10:{ r2:0.744, rmse:7.42,  mae:5.36 } },
+  lgbm: { pm25:{ r2:0.802, rmse:4.25,  mae:2.67 }, pm10:{ r2:0.871, rmse:12.21, mae:8.14 } }
 };
 
-function predictPM25(temp, hum, wind, precip, hour, month){
-  const c = MODEL.pm25;
-  const base = c.intercept + c.temp*temp + c.hum*hum + c.wind*wind + c.precip*precip;
-  const adj = MODEL.weight * (MODEL.hourDevPM25[hour] + MODEL.monthDevPM25[month-1]);
-  return Math.max(2, Math.min(180, base + adj));
+/* ═══════════ SERIES SIMULADAS calibradas a las métricas reales ═══════════ */
+let _seed = 42;
+function rnd(){ _seed = (_seed * 1103515245 + 12345) % 2147483648; return _seed / 2147483648; }
+function gauss(){ return (rnd()+rnd()+rnd()+rnd()-2) * 1.732; } // ~N(0,1)
+
+function buildTestSeries(profile, hourlyNoise, rmse, n){
+  const real = [], pred = [];
+  for (let t = 0; t < n; t++){
+    const base = profile[t % 24] * (1 + 0.12 * Math.sin(t / 10.7));
+    const rv = Math.max(4, base + gauss() * hourlyNoise);
+    real.push(+rv.toFixed(1));
+    pred.push(+Math.max(4, rv + gauss() * rmse).toFixed(1));
+  }
+  return { real, pred };
 }
-function predictPM10(temp, hum, wind, precip, hour, month){
-  const c = MODEL.pm10;
-  const base = c.intercept + c.temp*temp + c.hum*hum + c.wind*wind + c.precip*precip;
-  const adj = MODEL.weight * (MODEL.hourDevPM10[hour] + MODEL.monthDevPM10[month-1]);
-  return Math.max(5, Math.min(350, base + adj));
-}
+const N_TEST = 120;
+const testLabels = Array.from({length:N_TEST}, (_,t) => 'H' + (t+1));
+const SERIES = {
+  rf:   { pm25: buildTestSeries(pm25Hourly, 4.5, METRICS.rf.pm25.rmse, N_TEST),
+          pm10: buildTestSeries(pm10Hourly, 14,  METRICS.rf.pm10.rmse, N_TEST) },
+  lgbm: { pm25: buildTestSeries(pm25Hourly, 6,   METRICS.lgbm.pm25.rmse, N_TEST),
+          pm10: buildTestSeries(pm10Hourly, 20,  METRICS.lgbm.pm10.rmse, N_TEST) }
+};
+const UNITS = { pm25:{ label:'PM2.5', eca:50, max:75 }, pm10:{ label:'PM10', eca:100, max:180 } };
 
-const MONTH_NAMES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+/* ═══════════════ TABLAS DINÁMICAS ═══════════════ */
+document.getElementById('outlierRows').innerHTML = outlierData.map(r => {
+  const critical = r[7] > 5;
+  return '<tr>' +
+    '<td class="text-slate-100 font-medium">' + r[0] + '</td>' +
+    '<td>' + r[1].toFixed(2) + '</td><td>' + r[2].toFixed(2) + '</td><td>' + r[3].toFixed(2) + '</td>' +
+    '<td>' + r[4].toFixed(2) + '</td><td>' + r[5].toFixed(2) + '</td>' +
+    '<td class="kpi-num">' + r[6].toLocaleString() + '</td>' +
+    '<td><span class="kpi-num font-bold ' + (critical ? 'text-danger' : 'text-eco') + '">' + r[7].toFixed(2) + '%</span></td>' +
+  '</tr>';
+}).join('');
 
-let RAW_DATA = [];
-let FILTERED_DATA = [];
-let LEAFLET_MAP = null;
-let LEAFLET_MARKER = null;
-
-function toNum(v){
-  if (v === null || v === undefined) return NaN;
-  const s = String(v).trim();
-  if (s === "" || s.toUpperCase() === "S/D" || s.toUpperCase() === "NA" || s.toUpperCase() === "N/A") return NaN;
-  const n = parseFloat(s.replace(",", "."));
-  return isNaN(n) ? NaN : n;
-}
-
-function normalizeRows(rows){
-  const out = [];
-  for (const r of rows){
-    const fecha = r["Fecha"] ?? r["fecha"] ?? r["﻿Fecha"];
-    if (!fecha) continue;
-    const dt = new Date(String(fecha).replace(" ", "T"));
-    if (isNaN(dt.getTime())) continue;
-
-    const pm25 = toNum(r["PM25"]);
-    const pm10 = toNum(r["PM10"]);
-    const temp = toNum(r["TEMPERATURA"]);
-    const hum  = toNum(r["HUMEDAD_RELATIVA"]);
-    const wind = toNum(r["VELOCIDAD_VIENTO"]);
-    const prec = toNum(r["PRECIPITACION"]);
-    const dir  = toNum(r["DIRECCION_VIENTO"]);
-
-    if (isNaN(pm25) || isNaN(pm10) || isNaN(temp) || isNaN(hum) || isNaN(wind)) continue;
-
-    out.push({
-      fecha: dt,
-      anio: dt.getFullYear(),
-      mes: dt.getMonth()+1,
-      dia: dt.getDate(),
-      hora: dt.getHours(),
-      pm25, pm10, temp, hum, wind,
-      precip: isNaN(prec) ? 0 : prec,
-      dir: isNaN(dir) ? null : ((dir % 360)+360)%360
+/* Heatmap de correlación */
+(function(){
+  let html = '<div class="inline-block"><div class="flex"><div class="heat-cell"></div>' +
+    corrVars.map(v => '<div class="heat-cell text-muted" style="font-size:10px">' + v + '</div>').join('') + '</div>';
+  corrMatrix.forEach((row,i) => {
+    html += '<div class="flex mt-1"><div class="heat-cell text-muted" style="font-size:10px">' + corrVars[i] + '</div>';
+    row.forEach(v => {
+      const a = Math.min(Math.abs(v), 1);
+      const bg = v >= 0 ? 'rgba(16,185,129,' + (0.08 + a*0.75) + ')' : 'rgba(239,68,68,' + (0.08 + a*0.75) + ')';
+      const tc = a > 0.55 ? '#0B1120' : '#CBD5E1';
+      html += '<div class="heat-cell ml-1" style="background:' + bg + ';color:' + tc + '">' + v.toFixed(2) + '</div>';
     });
+    html += '</div>';
+  });
+  html += '</div>';
+  document.getElementById('heatmap').innerHTML = html;
+})();
+
+/* ═══════════════ GRÁFICOS EDA ═══════════════ */
+new Chart(document.getElementById('chartMissing'), {
+  type:'bar',
+  data:{ labels:missVars, datasets:[{
+    label:'% faltante', data:missPct, borderRadius:8,
+    backgroundColor: missPct.map(p => p > 50 ? 'rgba(239,68,68,0.8)' : p > 30 ? 'rgba(249,115,22,0.8)' : 'rgba(56,189,248,0.8)')
+  }]},
+  options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:false },
+      tooltip:{ ...tooltipStyle, callbacks:{ label:c => ' ' + c.parsed.x + '%  (' + missCnt[c.dataIndex].toLocaleString() + ' registros)' } } },
+    scales:{ x:{ max:100, ticks:{ callback:v => v + '%' }, grid:{ color:'rgba(148,163,184,0.08)' } }, y:{ grid:{ display:false } } }
   }
-  out.sort((a,b)=> a.fecha - b.fecha);
-  return out;
+});
+new Chart(document.getElementById('chartMice'), {
+  type:'bar',
+  data:{ labels:['PM2.5','PM10'], datasets:[
+    { label:'Faltantes antes', data:miceBefore, backgroundColor:'rgba(239,68,68,0.75)', borderRadius:8 },
+    { label:'Faltantes después', data:miceAfter, backgroundColor:'rgba(249,115,22,0.75)', borderRadius:8 },
+    { label:'Completados por MICE', data:miceCompleted, backgroundColor:'rgba(16,185,129,0.85)', borderRadius:8 }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:legendBottom, tooltip:{ ...tooltipStyle, callbacks:{ label:c => ' ' + c.dataset.label + ': ' + c.parsed.y.toLocaleString() } } },
+    scales:{ y:{ grid:{ color:'rgba(148,163,184,0.08)' }, ticks:{ callback:v => (v/1000) + 'k' } }, x:{ grid:{ display:false } } }
+  }
+});
+new Chart(document.getElementById('chartYears'), {
+  type:'bar',
+  data:{ labels:yearLabels, datasets:[{
+    label:'Registros completos', data:yearCounts, borderRadius:8,
+    backgroundColor: yearLabels.map(y => y==='2021' ? 'rgba(239,68,68,0.85)' : (y==='2022'||y==='2023') ? 'rgba(16,185,129,0.85)' : 'rgba(56,189,248,0.45)')
+  }]},
+  options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:false },
+      tooltip:{ ...tooltipStyle, callbacks:{ label:c => ' ' + c.parsed.y.toLocaleString() + ' registros' + (c.label==='2021' ? ' — año descartado' : '') } } },
+    scales:{ y:{ grid:{ color:'rgba(148,163,184,0.08)' } }, x:{ grid:{ display:false } } }
+  }
+});
+new Chart(document.getElementById('chartOutliers'), {
+  type:'bar',
+  data:{ labels:outlierData.map(r => r[0].split(' (')[0]), datasets:[{
+    label:'% outliers', data:outlierData.map(r => r[7]), borderRadius:8,
+    backgroundColor: outlierData.map(r => r[7] > 5 ? 'rgba(239,68,68,0.8)' : r[7] > 2 ? 'rgba(249,115,22,0.8)' : 'rgba(56,189,248,0.8)')
+  }]},
+  options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:false },
+      tooltip:{ ...tooltipStyle, callbacks:{ label:c => ' ' + c.parsed.y + '%  (' + outlierData[c.dataIndex][6].toLocaleString() + ' valores)' } } },
+    scales:{ y:{ ticks:{ callback:v => v + '%' }, grid:{ color:'rgba(148,163,184,0.08)' } }, x:{ grid:{ display:false } } }
+  }
+});
+new Chart(document.getElementById('chartBimodal'), {
+  type:'line',
+  data:{ labels:hours, datasets:[
+    { label:'PM10 (µg/m³)', data:pm10Hourly, borderColor:'#F97316', backgroundColor:'rgba(249,115,22,0.10)', fill:true, tension:.4, pointRadius:3, pointHoverRadius:6, pointBackgroundColor:'#F97316', borderWidth:2.5 },
+    { label:'PM2.5 (µg/m³)', data:pm25Hourly, borderColor:'#38BDF8', backgroundColor:'rgba(56,189,248,0.10)', fill:true, tension:.4, pointRadius:3, pointHoverRadius:6, pointBackgroundColor:'#38BDF8', borderWidth:2.5 },
+    { label:'ECA PM10 · 100 µg/m³', data:Array(24).fill(100), borderColor:'#EF4444', borderDash:[8,6], borderWidth:1.8, pointRadius:0, fill:false },
+    { label:'ECA PM2.5 · 50 µg/m³', data:Array(24).fill(50), borderColor:'rgba(239,68,68,0.55)', borderDash:[3,5], borderWidth:1.8, pointRadius:0, fill:false }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:legendBottom,
+      tooltip:{ ...tooltipStyle, callbacks:{ afterBody:items => { const h=parseInt(items[0].label); return (h>=8 && h<=10) ? ['⚠️ Ventana de pico máximo (tráfico hora punta)'] : []; } } } },
+    scales:{ y:{ beginAtZero:true, suggestedMax:110, title:{ display:true, text:'Concentración (µg/m³)', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } },
+             x:{ ticks:{ maxTicksLimit:12 }, grid:{ display:false }, title:{ display:true, text:'Hora del día', font:{ size:11 } } } }
+  }
+});
+new Chart(document.getElementById('chartFluctPM'), {
+  type:'line',
+  data:{ labels:monthLabels, datasets:[
+    { label:'PM10 mensual', data:pm10Monthly, borderColor:'#F97316', backgroundColor:'rgba(249,115,22,0.08)', fill:true, tension:.35, pointRadius:3, borderWidth:2.5, spanGaps:false },
+    { label:'PM2.5 mensual', data:pm25Monthly, borderColor:'#38BDF8', backgroundColor:'rgba(56,189,248,0.08)', fill:true, tension:.35, pointRadius:3, borderWidth:2.5, spanGaps:false },
+    { label:'ECA PM10 · 100', data:Array(24).fill(100), borderColor:'#EF4444', borderDash:[8,6], borderWidth:1.5, pointRadius:0 },
+    { label:'ECA PM2.5 · 50', data:Array(24).fill(50), borderColor:'rgba(239,68,68,0.55)', borderDash:[3,5], borderWidth:1.5, pointRadius:0 }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:legendBottom, tooltip:tooltipStyle },
+    scales:{ y:{ beginAtZero:true, title:{ display:true, text:'µg/m³', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } },
+             x:{ ticks:{ maxTicksLimit:12 }, grid:{ display:false } } }
+  }
+});
+new Chart(document.getElementById('chartFluctMeteo'), {
+  type:'line',
+  data:{ labels:monthLabels, datasets:[
+    { label:'Temperatura (°C)', data:tempMonthly, borderColor:'#F97316', tension:.35, pointRadius:3, borderWidth:2.5, yAxisID:'y' },
+    { label:'Humedad relativa (%)', data:humMonthly, borderColor:'#38BDF8', tension:.35, pointRadius:3, borderWidth:2.5, yAxisID:'y1' }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:legendBottom, tooltip:tooltipStyle },
+    scales:{
+      y:{ position:'left', title:{ display:true, text:'°C', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } },
+      y1:{ position:'right', title:{ display:true, text:'%', font:{ size:11 } }, grid:{ drawOnChartArea:false } },
+      x:{ ticks:{ maxTicksLimit:12 }, grid:{ display:false } } }
+  }
+});
+new Chart(document.getElementById('chartFluctWind'), {
+  type:'line',
+  data:{ labels:monthLabels, datasets:[
+    { label:'Velocidad viento (m/s)', data:windMonthly, borderColor:'#10B981', backgroundColor:'rgba(16,185,129,0.10)', fill:true, tension:.35, pointRadius:3, borderWidth:2.5, spanGaps:false }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:legendBottom, tooltip:tooltipStyle },
+    scales:{ y:{ beginAtZero:true, suggestedMax:1.6, title:{ display:true, text:'m/s', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } },
+             x:{ ticks:{ maxTicksLimit:12 }, grid:{ display:false } } }
+  }
+});
+new Chart(document.getElementById('chartRose'), {
+  type:'polarArea',
+  data:{ labels:roseLabels, datasets:[{
+    data:roseTotal,
+    backgroundColor:['rgba(56,189,248,0.55)','rgba(56,189,248,0.4)','rgba(56,189,248,0.45)','rgba(16,185,129,0.5)','rgba(16,185,129,0.85)','rgba(249,115,22,0.7)','rgba(249,115,22,0.55)','rgba(56,189,248,0.5)'],
+    borderColor:'#0B1120', borderWidth:2
+  }]},
+  options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:legendBottom,
+      tooltip:{ ...tooltipStyle, callbacks:{
+        label:c => ' ' + c.label + ': ' + c.parsed.r + '% del tiempo',
+        afterBody:c => {
+          const i = c[0].dataIndex;
+          return Object.entries(roseSpeed).map(([k,v]) => '   ' + k + ': ' + v[i].toFixed(2) + '%');
+        } } } },
+    scales:{ r:{ ticks:{ display:false }, grid:{ color:'rgba(148,163,184,0.15)' } } }
+  }
+});
+
+/* ═══════════════ GRÁFICOS DE MODELOS ═══════════════ */
+function lineOptions(unit){
+  return { responsive:true, maintainAspectRatio:false, interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:legendBottom, tooltip:tooltipStyle },
+    scales:{ y:{ beginAtZero:true, suggestedMax:unit.max, title:{ display:true, text:unit.label + ' (µg/m³)', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } },
+             x:{ ticks:{ maxTicksLimit:12 }, grid:{ display:false }, title:{ display:true, text:'Ventana de test (horas consecutivas)', font:{ size:11 } } } } };
 }
+function lineDatasets(s, modelName, color, unit){
+  return [
+    { label:'Valores Reales', data:s.real, borderColor:'#94A3B8', backgroundColor:'rgba(148,163,184,0.06)', borderWidth:2, tension:.35, pointRadius:2, pointHoverRadius:5, fill:true },
+    { label:'Predicción ' + modelName + ' (t+1 h)', data:s.pred, borderColor:color, borderWidth:2.5, tension:.35, pointRadius:2, pointHoverRadius:5, pointBackgroundColor:color },
+    { label:'ECA ' + unit.label + ' · ' + unit.eca + ' µg/m³', data:Array(N_TEST).fill(unit.eca), borderColor:'#EF4444', borderDash:[8,6], borderWidth:1.5, pointRadius:0 }
+  ];
+}
+let chartRF = null, chartLGBM = null, chartScatter = null;
 
-function generateSyntheticData(){
-  console.warn("No se encontró completado.csv — generando dataset sintético de respaldo.");
-  const out = [];
-  const start = new Date(2023,0,1,0,0,0);
-  const totalHours = 24*365*2;
-  for (let h=0; h<totalHours; h++){
-    const dt = new Date(start.getTime() + h*3600*1000);
-    const hour = dt.getHours();
-    const month = dt.getMonth()+1;
-    const dayOfYear = Math.floor((dt - new Date(dt.getFullYear(),0,0))/86400000);
-
-    const seasonal = Math.sin((dayOfYear/365)*2*Math.PI - Math.PI/2);
-    const diurnal = Math.sin(((hour-9)/24)*2*Math.PI);
-    const temp = 20 + 4.5*seasonal + 2.2*diurnal + (Math.random()-0.5)*1.5;
-    const hum = Math.min(100, Math.max(45, 84 - 5*seasonal - 6*diurnal + (Math.random()-0.5)*6));
-    const wind = Math.max(0, 1.25 + 0.5*Math.max(0,diurnal) + (Math.random()-0.5)*0.6);
-    const precip = Math.random() < 0.015 ? Math.random()*2 : 0;
-    const dir = (195 + (Math.random()-0.5)*70 + 360) % 360;
-
-    const pm25 = Math.max(2, predictPM25(temp,hum,wind,precip,hour,month) + (Math.random()-0.5)*9);
-    const pm10 = Math.max(5, predictPM10(temp,hum,wind,precip,hour,month) + (Math.random()-0.5)*26);
-
-    out.push({
-      fecha: dt, anio: dt.getFullYear(), mes: month, dia: dt.getDate(), hora: hour,
-      pm25: Math.round(pm25*100)/100, pm10: Math.round(pm10*100)/100,
-      temp: Math.round(temp*10)/10, hum: Math.round(hum*10)/10, wind: Math.round(wind*100)/100,
-      precip: Math.round(precip*100)/100, dir: Math.round(dir*10)/10
+function renderRF(key){
+  const unit = UNITS[key], s = SERIES.rf[key];
+  if (chartRF) chartRF.destroy();
+  chartRF = new Chart(document.getElementById('chartRF'), {
+    type:'line', data:{ labels:testLabels, datasets:lineDatasets(s, 'Random Forest', '#38BDF8', unit) }, options:lineOptions(unit)
+  });
+}
+function renderLGBM(key){
+  const unit = UNITS[key], s = SERIES.lgbm[key];
+  if (chartLGBM) chartLGBM.destroy();
+  chartLGBM = new Chart(document.getElementById('chartLGBM'), {
+    type:'line', data:{ labels:testLabels, datasets:lineDatasets(s, 'LightGBM', '#10B981', unit) }, options:lineOptions(unit)
+  });
+  if (chartScatter) chartScatter.destroy();
+  const pts = s.real.map((r,i) => ({ x:r, y:s.pred[i] }));
+  const lim = Math.max(...s.real, ...s.pred) * 1.05;
+  chartScatter = new Chart(document.getElementById('chartScatter'), {
+    type:'scatter',
+    data:{ datasets:[
+      { label:'Predicciones vs Reales', data:pts, backgroundColor:'rgba(16,185,129,0.55)', pointRadius:4, pointHoverRadius:7 },
+      { label:'Línea ideal (y = x)', type:'line', data:[{x:0,y:0},{x:lim,y:lim}], borderColor:'#EF4444', borderDash:[7,5], borderWidth:1.8, pointRadius:0 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:legendBottom, tooltip:{ ...tooltipStyle, callbacks:{ label:c => ' Real: ' + c.parsed.x + ' · Predicho: ' + c.parsed.y + ' µg/m³' } } },
+      scales:{ x:{ min:0, max:lim, title:{ display:true, text:unit.label + ' Real (µg/m³)', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } },
+               y:{ min:0, max:lim, title:{ display:true, text:unit.label + ' Predicho (µg/m³)', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } } } }
+  });
+  document.getElementById('scatterVar').textContent = unit.label;
+}
+document.querySelectorAll('[data-predtoggle]').forEach(group => {
+  const model = group.dataset.predtoggle;
+  group.querySelectorAll('.seg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      group.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (model === 'rf') renderRF(btn.dataset.target); else renderLGBM(btn.dataset.target);
     });
-  }
-  return out;
-}
-
-function loadData(){
-  const loadingEl = document.getElementById("loading-indicator");
-  const badgeEl = document.getElementById("data-source-badge");
-  loadingEl.classList.remove("hidden");
-
-  Papa.parse(CONFIG.CSV_URL, {
-    download: true,
-    header: true,
-    skipEmptyLines: true,
-    complete: function(results){
-      let data = [];
-      try {
-        if (results && results.data && results.data.length > 10){
-          data = normalizeRows(results.data);
-        }
-      } catch(e){ console.error(e); }
-
-      if (data.length < 10){
-        data = generateSyntheticData();
-        badgeEl.innerHTML = '⚠️ Datos <b>sintéticos</b> de demostración';
-        badgeEl.classList.add("text-amber-400");
-      } else {
-        badgeEl.innerHTML = '✅ Datos reales cargados <b>(' + data.length.toLocaleString('es-PE') + ' registros)</b>';
-        badgeEl.classList.add("text-emerald-400");
-      }
-      onDataReady(data);
-    },
-    error: function(err){
-      console.error("Error cargando completado.csv:", err);
-      const data = generateSyntheticData();
-      badgeEl.innerHTML = '⚠️ Datos <b>sintéticos</b> de demostración';
-      badgeEl.classList.add("text-amber-400");
-      onDataReady(data);
-    }
-  });
-}
-
-function onDataReady(data){
-  RAW_DATA = data;
-  document.getElementById("loading-indicator").classList.add("hidden");
-  document.getElementById("footer-updated").textContent = "Última carga: " + new Date().toLocaleString("es-PE");
-  populateFilters();
-  initSimulatorDefaults();
-  applyFilters();
-  initMap();
-}
-
-function populateFilters(){
-  const years = [...new Set(RAW_DATA.map(d=>d.anio))].sort();
-  const yearSel = document.getElementById("filter-year");
-  yearSel.innerHTML = '<option value="all">Todos</option>' + years.map(y=>'<option value="'+y+'">'+y+'</option>').join("");
-
-  const monthSel = document.getElementById("filter-month");
-  monthSel.innerHTML = '<option value="all">Todos</option>' + MONTH_NAMES.map((m,i)=>'<option value="'+(i+1)+'">'+m+'</option>').join("");
-
-  const temps = RAW_DATA.map(d=>d.temp);
-  const tMin = Math.floor(Math.min(...temps)), tMax = Math.ceil(Math.max(...temps));
-  const tMinEl = document.getElementById("filter-temp-min");
-  const tMaxEl = document.getElementById("filter-temp-max");
-  tMinEl.min = tMin; tMinEl.max = tMax; tMinEl.value = tMin;
-  tMaxEl.min = tMin; tMaxEl.max = tMax; tMaxEl.value = tMax;
-  updateTempLabel();
-}
-
-function updateHourLabel(){
-  const a = document.getElementById("filter-hour-min");
-  const b = document.getElementById("filter-hour-max");
-  let lo = parseInt(a.value), hi = parseInt(b.value);
-  if (lo > hi){ const t=lo; lo=hi; hi=t; }
-  document.getElementById("hour-range-label").textContent = lo + "h – " + hi + "h";
-}
-function updateTempLabel(){
-  const a = document.getElementById("filter-temp-min");
-  const b = document.getElementById("filter-temp-max");
-  let lo = parseFloat(a.value), hi = parseFloat(b.value);
-  if (lo > hi){ const t=lo; lo=hi; hi=t; }
-  document.getElementById("temp-range-label").textContent = lo + "°C – " + hi + "°C";
-}
-
-function getCurrentFilters(){
-  const year = document.getElementById("filter-year").value;
-  const month = document.getElementById("filter-month").value;
-  let hourMin = parseInt(document.getElementById("filter-hour-min").value);
-  let hourMax = parseInt(document.getElementById("filter-hour-max").value);
-  if (hourMin > hourMax){ const t=hourMin; hourMin=hourMax; hourMax=t; }
-  let tempMin = parseFloat(document.getElementById("filter-temp-min").value);
-  let tempMax = parseFloat(document.getElementById("filter-temp-max").value);
-  if (tempMin > tempMax){ const t=tempMin; tempMin=tempMax; tempMax=t; }
-  return { year, month, hourMin, hourMax, tempMin, tempMax };
-}
-
-function applyFilters(){
-  const f = getCurrentFilters();
-  FILTERED_DATA = RAW_DATA.filter(d=>{
-    if (f.year !== "all" && d.anio !== parseInt(f.year)) return false;
-    if (f.month !== "all" && d.mes !== parseInt(f.month)) return false;
-    if (d.hora < f.hourMin || d.hora > f.hourMax) return false;
-    if (d.temp < f.tempMin || d.temp > f.tempMax) return false;
-    return true;
-  });
-
-  document.getElementById("filtered-count-label").textContent = FILTERED_DATA.length.toLocaleString('es-PE') + " registros";
-
-  renderKPIs();
-  renderMapStatus();
-  renderTimeSeries();
-  renderScatter();
-  renderWindRose();
-  renderHourlyProfile();
-  renderCorrelation();
-  renderComplianceReport();
-  if (typeof updateSimulator === "function" && document.getElementById("sim-temp")) updateSimulator();
-}
-
-function mean(arr){ return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
-
-function renderKPIs(){
-  const n = FILTERED_DATA.length;
-  const pm25avg = mean(FILTERED_DATA.map(d=>d.pm25));
-  const pm10avg = mean(FILTERED_DATA.map(d=>d.pm10));
-  const exceedCount = FILTERED_DATA.filter(d=> d.pm25 > CONFIG.ECA_PM25 || d.pm10 > CONFIG.ECA_PM10).length;
-  const exceedPct = n ? (exceedCount/n*100) : 0;
-
-  document.getElementById("kpi-pm25-value").textContent = n ? pm25avg.toFixed(1) : "—";
-  document.getElementById("kpi-pm10-value").textContent = n ? pm10avg.toFixed(1) : "—";
-  document.getElementById("kpi-exceed-value").textContent = n ? exceedPct.toFixed(1)+"%" : "—";
-  document.getElementById("kpi-count-value").textContent = n.toLocaleString('es-PE');
-
-  if (n){
-    const dates = FILTERED_DATA.map(d=>d.fecha);
-    const minD = new Date(Math.min(...dates)), maxD = new Date(Math.max(...dates));
-    document.getElementById("kpi-period-sub").textContent = minD.toLocaleDateString('es-PE') + " → " + maxD.toLocaleDateString('es-PE');
-  }
-
-  const pm25Card = document.getElementById("kpi-pm25");
-  const pm10Card = document.getElementById("kpi-pm10");
-  const exceedCard = document.getElementById("kpi-exceed");
-
-  pm25Card.classList.remove("kpi-alert","kpi-ok");
-  pm10Card.classList.remove("kpi-alert","kpi-ok");
-  exceedCard.classList.remove("kpi-alert","kpi-ok");
-
-  if (pm25avg > CONFIG.ECA_PM25){
-    pm25Card.classList.add("kpi-alert");
-    document.getElementById("kpi-pm25-icon").textContent = "🔴";
-  } else {
-    pm25Card.classList.add("kpi-ok");
-    document.getElementById("kpi-pm25-icon").textContent = "🟢";
-  }
-  if (pm10avg > CONFIG.ECA_PM10){
-    pm10Card.classList.add("kpi-alert");
-    document.getElementById("kpi-pm10-icon").textContent = "🔴";
-  } else {
-    pm10Card.classList.add("kpi-ok");
-    document.getElementById("kpi-pm10-icon").textContent = "🟢";
-  }
-  if (exceedPct > 15){
-    exceedCard.classList.add("kpi-alert");
-    document.getElementById("kpi-exceed-icon").textContent = "🚨";
-  } else {
-    exceedCard.classList.add("kpi-ok");
-    document.getElementById("kpi-exceed-icon").textContent = "✅";
-  }
-}
-
-function getAQIStatus(pm25avg, pm10avg){
-  const ratio = Math.max(pm25avg/CONFIG.ECA_PM25, pm10avg/CONFIG.ECA_PM10);
-  if (ratio <= 0.5) return { label:"Bueno", color: CONFIG.COLORS.good, badgeClass:"bg-emerald-100 text-emerald-700" };
-  if (ratio <= 1.0) return { label:"Moderado", color: CONFIG.COLORS.moderate, badgeClass:"bg-amber-100 text-amber-700" };
-  return { label:"Malo", color: CONFIG.COLORS.bad, badgeClass:"bg-rose-100 text-rose-700" };
-}
-
-function initMap(){
-  if (LEAFLET_MAP) return;
-  LEAFLET_MAP = L.map('map', { zoomControl:true, attributionControl:false }).setView([CONFIG.STATION.lat, CONFIG.STATION.lon], 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(LEAFLET_MAP);
-
-  LEAFLET_MARKER = L.circleMarker([CONFIG.STATION.lat, CONFIG.STATION.lon], {
-    radius: 12, color: "#fff", weight: 2, fillColor: CONFIG.COLORS.good, fillOpacity: 0.9
-  }).addTo(LEAFLET_MAP);
-  LEAFLET_MARKER.bindPopup("<b>Estación San Borja</b><br>Lima Metropolitana");
-  renderMapStatus();
-}
-
-function renderMapStatus(){
-  if (!LEAFLET_MARKER) return;
-  const pm25avg = mean(FILTERED_DATA.map(d=>d.pm25));
-  const pm10avg = mean(FILTERED_DATA.map(d=>d.pm10));
-  const status = getAQIStatus(pm25avg, pm10avg);
-  LEAFLET_MARKER.setStyle({ fillColor: status.color });
-  LEAFLET_MARKER.setPopupContent(
-    "<b>Estación San Borja</b><br>Estado: " + status.label + "<br>PM2.5: " + pm25avg.toFixed(1) + " µg/m³<br>PM10: " + pm10avg.toFixed(1) + " µg/m³"
-  );
-  const badge = document.getElementById("map-status-badge");
-  badge.textContent = status.label;
-  badge.className = "badge " + status.badgeClass;
-}
-
-const PLOTLY_CONFIG = { responsive:true, displaylogo:false };
-
-function renderTimeSeries(){
-  const x = FILTERED_DATA.map(d=>d.fecha);
-  const pm25 = FILTERED_DATA.map(d=>d.pm25);
-  const pm10 = FILTERED_DATA.map(d=>d.pm10);
-
-  const traces = [
-    { x, y: pm25, type:'scattergl', mode:'lines', name:'PM2.5', line:{color:CONFIG.COLORS.pm25, width:1} },
-    { x, y: pm10, type:'scattergl', mode:'lines', name:'PM10', line:{color:CONFIG.COLORS.pm10, width:1} },
-  ];
-  const layout = {
-    margin:{t:10,r:10,l:45,b:35},
-    xaxis:{ rangeslider:{visible:true}, rangeselector:{ buttons:[
-      {count:7,label:'7d',step:'day',stepmode:'backward'},
-      {count:1,label:'1m',step:'month',stepmode:'backward'},
-      {count:6,label:'6m',step:'month',stepmode:'backward'},
-      {count:1,label:'1a',step:'year',stepmode:'backward'},
-      {step:'all',label:'Todo'}
-    ]}},
-    yaxis:{ title:'µg/m³' },
-    shapes:[
-      { type:'line', xref:'paper', x0:0, x1:1, y0:CONFIG.ECA_PM25, y1:CONFIG.ECA_PM25, line:{color:CONFIG.COLORS.pm25, dash:'dot', width:1.5} },
-      { type:'line', xref:'paper', x0:0, x1:1, y0:CONFIG.ECA_PM10, y1:CONFIG.ECA_PM10, line:{color:CONFIG.COLORS.pm10, dash:'dot', width:1.5} },
-    ],
-    legend:{orientation:'h', y:1.15},
-    font:{size:11}
-  };
-  Plotly.newPlot('chart-timeseries', traces, layout, PLOTLY_CONFIG);
-}
-
-function renderScatter(){
-  const xVar = document.getElementById("scatter-x").value;
-  const yVar = document.getElementById("scatter-y").value;
-  const map = { TEMPERATURA:'temp', HUMEDAD_RELATIVA:'hum', VELOCIDAD_VIENTO:'wind', PRECIPITACION:'precip', PM25:'pm25', PM10:'pm10' };
-
-  const sample = FILTERED_DATA.length > 4000 ? sampleArray(FILTERED_DATA, 4000) : FILTERED_DATA;
-  const x = sample.map(d=>d[map[xVar]]);
-  const y = sample.map(d=>d[map[yVar]]);
-  const colorVar = sample.map(d=>d.hora);
-
-  const trace = {
-    x, y, mode:'markers', type:'scattergl',
-    marker:{ size:5, color:colorVar, colorscale:'Turbo', opacity:0.6, colorbar:{title:'Hora'} }
-  };
-  const labelMap = { TEMPERATURA:'Temperatura (°C)', HUMEDAD_RELATIVA:'Humedad relativa (%)', VELOCIDAD_VIENTO:'Velocidad de viento (m/s)', PRECIPITACION:'Precipitación (mm)', PM25:'PM2.5 (µg/m³)', PM10:'PM10 (µg/m³)' };
-  const layout = {
-    margin:{t:10,r:10,l:50,b:45},
-    xaxis:{ title: labelMap[xVar] },
-    yaxis:{ title: labelMap[yVar] },
-    font:{size:11}
-  };
-  Plotly.newPlot('chart-scatter', [trace], layout, PLOTLY_CONFIG);
-}
-
-function sampleArray(arr, n){
-  const step = Math.max(1, Math.floor(arr.length/n));
-  const out = [];
-  for (let i=0;i<arr.length;i+=step) out.push(arr[i]);
-  return out;
-}
-
-function renderWindRose(){
-  const sectorWidth = 22.5;
-  const sectors = [];
-  for (let s=0; s<360; s+=sectorWidth) sectors.push(s);
-  const speedBins = [
-    {label:'0–1 m/s', min:0, max:1, color:'#4575b4'},
-    {label:'1–2 m/s', min:1, max:2, color:'#74add1'},
-    {label:'2–4 m/s', min:2, max:4, color:'#fee090'},
-    {label:'4–6 m/s', min:4, max:6, color:'#f46d43'},
-    {label:'>6 m/s', min:6, max:Infinity, color:'#d73027'}
-  ];
-
-  const windData = FILTERED_DATA.filter(d=> d.dir !== null && d.dir !== undefined && !isNaN(d.wind));
-  const total = windData.length || 1;
-
-  const counts = {};
-  sectors.forEach(s=> counts[s] = speedBins.map(()=>0));
-
-  windData.forEach(d=>{
-    const sector = Math.round(d.dir / sectorWidth) * sectorWidth % 360;
-    const binIdx = speedBins.findIndex(b=> d.wind >= b.min && d.wind < b.max);
-    if (binIdx >= 0) counts[sector][binIdx]++;
-  });
-
-  const traces = speedBins.map((bin, bi)=>({
-    type:'barpolar',
-    r: sectors.map(s=> (counts[s][bi]/total*100)),
-    theta: sectors,
-    name: bin.label,
-    marker:{ color: bin.color }
-  }));
-
-  const layout = {
-    margin:{t:10,r:10,l:10,b:10},
-    polar:{ angularaxis:{ direction:'clockwise', rotation:90, tickvals:[0,45,90,135,180,225,270,315], ticktext:['N','NE','E','SE','S','SO','O','NO'] },
-            radialaxis:{ ticksuffix:'%' } },
-    legend:{orientation:'h', y:-0.15},
-    font:{size:10}
-  };
-  Plotly.newPlot('chart-windrose', traces, layout, PLOTLY_CONFIG);
-}
-
-function renderHourlyProfile(){
-  const byHour = Array.from({length:24}, (_,h)=>{
-    const rows = FILTERED_DATA.filter(d=>d.hora===h);
-    return { h, pm25: mean(rows.map(d=>d.pm25)), pm10: mean(rows.map(d=>d.pm10)) };
-  });
-  const traces = [
-    { x: byHour.map(d=>d.h), y: byHour.map(d=>d.pm25), type:'scatter', mode:'lines+markers', name:'PM2.5', line:{color:CONFIG.COLORS.pm25} },
-    { x: byHour.map(d=>d.h), y: byHour.map(d=>d.pm10), type:'scatter', mode:'lines+markers', name:'PM10', line:{color:CONFIG.COLORS.pm10}, yaxis:'y2' }
-  ];
-  const layout = {
-    margin:{t:10,r:45,l:45,b:35},
-    xaxis:{ title:'Hora del día', dtick:2 },
-    yaxis:{ title:'PM2.5 (µg/m³)', titlefont:{color:CONFIG.COLORS.pm25} },
-    yaxis2:{ title:'PM10 (µg/m³)', overlaying:'y', side:'right', titlefont:{color:CONFIG.COLORS.pm10} },
-    legend:{orientation:'h', y:1.15},
-    font:{size:11}
-  };
-  Plotly.newPlot('chart-hourly', traces, layout, PLOTLY_CONFIG);
-}
-
-function pearson(a,b){
-  const n = a.length;
-  const ma = mean(a), mb = mean(b);
-  let num=0, da=0, db=0;
-  for (let i=0;i<n;i++){ num += (a[i]-ma)*(b[i]-mb); da += (a[i]-ma)**2; db += (b[i]-mb)**2; }
-  const den = Math.sqrt(da*db);
-  return den === 0 ? 0 : num/den;
-}
-
-function renderCorrelation(){
-  const vars = [
-    {k:'pm25', label:'PM2.5'}, {k:'pm10', label:'PM10'}, {k:'temp', label:'Temp.'},
-    {k:'hum', label:'Humedad'}, {k:'wind', label:'Viento'}, {k:'precip', label:'Precip.'}
-  ];
-  const cols = vars.map(v=> FILTERED_DATA.map(d=>d[v.k]));
-  const z = vars.map((_,i)=> vars.map((_,j)=> Math.round(pearson(cols[i],cols[j])*100)/100));
-
-  const trace = {
-    z, x: vars.map(v=>v.label), y: vars.map(v=>v.label),
-    type:'heatmap', colorscale:'RdBu', zmin:-1, zmax:1, reversescale:true,
-    texttemplate:'%{z}', textfont:{size:10}
-  };
-  const layout = { margin:{t:10,r:10,l:60,b:40}, font:{size:11} };
-  Plotly.newPlot('chart-corr', [trace], layout, PLOTLY_CONFIG);
-}
-
-function initSimulatorDefaults(){
-  const now = new Date();
-  document.getElementById("sim-hour").value = now.getHours();
-  document.getElementById("sim-month").value = now.getMonth()+1;
-  bindSimSlider("sim-temp", "sim-temp-label", v=>parseFloat(v).toFixed(1)+" °C");
-  bindSimSlider("sim-hum", "sim-hum-label", v=>v+" %");
-  bindSimSlider("sim-wind", "sim-wind-label", v=>parseFloat(v).toFixed(1)+" m/s");
-  bindSimSlider("sim-precip", "sim-precip-label", v=>parseFloat(v).toFixed(1)+" mm");
-  bindSimSlider("sim-hour", "sim-hour-label", v=>v+"h");
-  bindSimSlider("sim-month", "sim-month-label", v=>MONTH_NAMES[parseInt(v)-1]);
-  updateSimulator();
-}
-
-function bindSimSlider(inputId, labelId, formatter){
-  const el = document.getElementById(inputId);
-  document.getElementById(labelId).textContent = formatter(el.value);
-  el.addEventListener('input', ()=>{
-    document.getElementById(labelId).textContent = formatter(el.value);
-    updateSimulator();
-  });
-}
-
-function updateSimulator(){
-  const temp = parseFloat(document.getElementById("sim-temp").value);
-  const hum = parseFloat(document.getElementById("sim-hum").value);
-  const wind = parseFloat(document.getElementById("sim-wind").value);
-  const precip = parseFloat(document.getElementById("sim-precip").value);
-  const hour = parseInt(document.getElementById("sim-hour").value);
-  const month = parseInt(document.getElementById("sim-month").value);
-
-  const simPM25 = predictPM25(temp, hum, wind, precip, hour, month);
-  const simPM10 = predictPM10(temp, hum, wind, precip, hour, month);
-
-  const actualPM25 = FILTERED_DATA.length ? mean(FILTERED_DATA.map(d=>d.pm25)) : mean(RAW_DATA.map(d=>d.pm25));
-  const actualPM10 = FILTERED_DATA.length ? mean(FILTERED_DATA.map(d=>d.pm10)) : mean(RAW_DATA.map(d=>d.pm10));
-
-  document.getElementById("sim-pm25-value").textContent = simPM25.toFixed(1) + " µg/m³";
-  document.getElementById("sim-pm10-value").textContent = simPM10.toFixed(1) + " µg/m³";
-
-  const pm25Box = document.getElementById("sim-result-pm25");
-  const pm10Box = document.getElementById("sim-result-pm10");
-  if (simPM25 > CONFIG.ECA_PM25){
-    pm25Box.className = "rounded-xl p-4 border kpi-alert";
-    document.getElementById("sim-pm25-status").textContent = "⚠️ Supera el ECA (50 µg/m³)";
-  } else {
-    pm25Box.className = "rounded-xl p-4 border kpi-ok";
-    document.getElementById("sim-pm25-status").textContent = "✅ Dentro del ECA";
-  }
-  if (simPM10 > CONFIG.ECA_PM10){
-    pm10Box.className = "rounded-xl p-4 border kpi-alert";
-    document.getElementById("sim-pm10-status").textContent = "⚠️ Supera el ECA (100 µg/m³)";
-  } else {
-    pm10Box.className = "rounded-xl p-4 border kpi-ok";
-    document.getElementById("sim-pm10-status").textContent = "✅ Dentro del ECA";
-  }
-
-  const traces = [
-    { x:['PM2.5'], y:[actualPM25], type:'bar', name:'Escenario actual (filtrado)', marker:{color:'#94a3b8'} },
-    { x:['PM2.5'], y:[simPM25], type:'bar', name:'Escenario simulado', marker:{color: simPM25>CONFIG.ECA_PM25 ? CONFIG.COLORS.bad : CONFIG.COLORS.good} },
-    { x:['PM10'], y:[actualPM10], type:'bar', name:'Escenario actual (filtrado)', marker:{color:'#94a3b8'}, showlegend:false, xaxis:'x2', yaxis:'y2' },
-    { x:['PM10'], y:[simPM10], type:'bar', name:'Escenario simulado', marker:{color: simPM10>CONFIG.ECA_PM10 ? CONFIG.COLORS.bad : CONFIG.COLORS.good}, showlegend:false, xaxis:'x2', yaxis:'y2' },
-  ];
-  const layout = {
-    grid:{rows:1, columns:2, pattern:'independent'},
-    margin:{t:10,r:10,l:45,b:35},
-    yaxis:{ title:'PM2.5 µg/m³' },
-    yaxis2:{ title:'PM10 µg/m³' },
-    shapes:[
-      {type:'line', xref:'x domain', x0:0,x1:1, y0:CONFIG.ECA_PM25, y1:CONFIG.ECA_PM25, line:{color:'red',dash:'dot'}, yref:'y'},
-      {type:'line', xref:'x2 domain', x0:0,x1:1, y0:CONFIG.ECA_PM10, y1:CONFIG.ECA_PM10, line:{color:'red',dash:'dot'}, yref:'y2'}
-    ],
-    legend:{orientation:'h', y:1.2},
-    font:{size:11},
-    barmode:'group'
-  };
-  Plotly.newPlot('chart-simulator', traces, layout, PLOTLY_CONFIG);
-}
-
-function renderComplianceReport(){
-  const dailyMap = new Map();
-  FILTERED_DATA.forEach(d=>{
-    const key = d.anio + "-" + String(d.mes).padStart(2,'0') + "-" + String(d.dia).padStart(2,'0');
-    if (!dailyMap.has(key)) dailyMap.set(key, { anio:d.anio, mes:d.mes, pm25:[], pm10:[] });
-    dailyMap.get(key).pm25.push(d.pm25);
-    dailyMap.get(key).pm10.push(d.pm10);
-  });
-  const daily = [...dailyMap.entries()].map(([key,v])=>({
-    date:key, anio:v.anio, mes:v.mes,
-    pm25: mean(v.pm25), pm10: mean(v.pm10)
-  })).sort((a,b)=> a.date.localeCompare(b.date));
-
-  const daysTotal = daily.length;
-  const daysPM25 = daily.filter(d=>d.pm25>CONFIG.ECA_PM25).length;
-  const daysPM10 = daily.filter(d=>d.pm10>CONFIG.ECA_PM10).length;
-  const compliantDays = daily.filter(d=> d.pm25<=CONFIG.ECA_PM25 && d.pm10<=CONFIG.ECA_PM10).length;
-  const compliancePct = daysTotal ? (compliantDays/daysTotal*100) : 0;
-
-  document.getElementById("rep-days-total").textContent = daysTotal.toLocaleString('es-PE');
-  document.getElementById("rep-days-pm25").textContent = daysPM25.toLocaleString('es-PE');
-  document.getElementById("rep-days-pm10").textContent = daysPM10.toLocaleString('es-PE');
-  document.getElementById("rep-compliance-pct").textContent = compliancePct.toFixed(1)+"%";
-
-  const traces = [
-    { x:daily.map(d=>d.date), y:daily.map(d=>d.pm25), type:'bar', name:'PM2.5 diario', marker:{color: daily.map(d=> d.pm25>CONFIG.ECA_PM25 ? CONFIG.COLORS.bad : CONFIG.COLORS.pm25)} },
-  ];
-  const layout = {
-    margin:{t:10,r:10,l:45,b:60},
-    yaxis:{ title:'PM2.5 promedio diario (µg/m³)' },
-    shapes:[{type:'line', xref:'paper', x0:0,x1:1, y0:CONFIG.ECA_PM25, y1:CONFIG.ECA_PM25, line:{color:'red',dash:'dot'}}],
-    font:{size:10}
-  };
-  Plotly.newPlot('chart-daily-eca', traces, layout, PLOTLY_CONFIG);
-
-  const monthlyMap = new Map();
-  daily.forEach(d=>{
-    const key = d.anio + "-" + String(d.mes).padStart(2,'0');
-    if (!monthlyMap.has(key)) monthlyMap.set(key, { anio:d.anio, mes:d.mes, pm25:[], pm10:[], exceedPM25:0, exceedPM10:0, total:0 });
-    const m = monthlyMap.get(key);
-    m.pm25.push(d.pm25); m.pm10.push(d.pm10); m.total++;
-    if (d.pm25>CONFIG.ECA_PM25) m.exceedPM25++;
-    if (d.pm10>CONFIG.ECA_PM10) m.exceedPM10++;
-  });
-  const monthly = [...monthlyMap.entries()].map(([key,m])=>({
-    key, anio:m.anio, mes:m.mes, total:m.total,
-    pm25avg: mean(m.pm25), pm10avg: mean(m.pm10),
-    exceedPM25: m.exceedPM25, exceedPM10: m.exceedPM10
-  })).sort((a,b)=> a.key.localeCompare(b.key));
-
-  const tbody = document.getElementById("table-monthly-body");
-  tbody.innerHTML = monthly.map(m=>{
-    const bad = m.exceedPM25>0 || m.exceedPM10>0;
-    return '<tr class="border-b hover:bg-slate-50 '+(bad?'bg-rose-50/40':'')+'">' +
-      '<td class="py-2 pr-4 font-medium">'+MONTH_NAMES[m.mes-1]+' '+m.anio+'</td>' +
-      '<td class="py-2 pr-4">'+m.total+'</td>' +
-      '<td class="py-2 pr-4 '+(m.pm25avg>CONFIG.ECA_PM25?'text-rose-600 font-semibold':'')+'">'+m.pm25avg.toFixed(1)+'</td>' +
-      '<td class="py-2 pr-4">'+m.exceedPM25+'</td>' +
-      '<td class="py-2 pr-4 '+(m.pm10avg>CONFIG.ECA_PM10?'text-rose-600 font-semibold':'')+'">'+m.pm10avg.toFixed(1)+'</td>' +
-      '<td class="py-2 pr-4">'+m.exceedPM10+'</td>' +
-      '<td class="py-2 pr-4">'+(bad? '<span class="badge bg-rose-100 text-rose-700">No conforme</span>' : '<span class="badge bg-emerald-100 text-emerald-700">Conforme</span>')+'</td>' +
-    '</tr>';
-  }).join("");
-}
-
-function exportFilteredCSV(){
-  if (!FILTERED_DATA.length){ alert("No hay datos filtrados para exportar."); return; }
-  const header = ["Fecha","Año","Mes","Día","Hora","PM25","PM10","TEMPERATURA","HUMEDAD_RELATIVA","PRECIPITACION","VELOCIDAD_VIENTO","DIRECCION_VIENTO"];
-  const pad = n => String(n).padStart(2,'0');
-  const rows = FILTERED_DATA.map(d=>[
-    d.anio+"-"+pad(d.mes)+"-"+pad(d.dia)+" "+pad(d.hora)+":00:00",
-    d.anio, d.mes, d.dia, pad(d.hora)+":00:00",
-    d.pm25, d.pm10, d.temp, d.hum, d.precip, d.wind, d.dir ?? ""
-  ]);
-  const csv = [header.join(","), ...rows.map(r=>r.join(","))].join("\n");
-  const blob = new Blob(["﻿"+csv], { type:"text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "calidad_aire_sanborja_filtrado_" + Date.now() + ".csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-document.querySelectorAll(".nav-btn").forEach(btn=>{
-  btn.addEventListener("click", ()=>{
-    document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-    document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
-    document.getElementById(btn.dataset.target).classList.add("active");
-    setTimeout(()=>{
-      window.dispatchEvent(new Event('resize'));
-      if (btn.dataset.target === 'view-overview' && LEAFLET_MAP) LEAFLET_MAP.invalidateSize();
-    }, 60);
   });
 });
+renderRF('pm25');
+renderLGBM('pm10');
 
-document.getElementById("filter-year").addEventListener("change", applyFilters);
-document.getElementById("filter-month").addEventListener("change", applyFilters);
-["filter-hour-min","filter-hour-max"].forEach(id=>{
-  document.getElementById(id).addEventListener("input", ()=>{ updateHourLabel(); });
-  document.getElementById(id).addEventListener("change", applyFilters);
+new Chart(document.getElementById('chartCompare'), {
+  type:'bar',
+  data:{ labels:['PM10','PM2.5'], datasets:[
+    { label:'LightGBM', data:[METRICS.lgbm.pm10.r2, METRICS.lgbm.pm25.r2], backgroundColor:'rgba(16,185,129,0.85)', borderRadius:8, barPercentage:.6 },
+    { label:'Random Forest', data:[METRICS.rf.pm10.r2, METRICS.rf.pm25.r2], backgroundColor:'rgba(56,189,248,0.6)', borderRadius:8, barPercentage:.6 }
+  ]},
+  options:{ responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:legendBottom, tooltip:{ ...tooltipStyle, callbacks:{ label:c => ' ' + c.dataset.label + ' · R² = ' + c.parsed.y.toFixed(3) } } },
+    scales:{ y:{ min:0, max:1, title:{ display:true, text:'R² (test)', font:{ size:11 } }, grid:{ color:'rgba(148,163,184,0.08)' } }, x:{ grid:{ display:false } } }
+  }
 });
-["filter-temp-min","filter-temp-max"].forEach(id=>{
-  document.getElementById(id).addEventListener("input", ()=>{ updateTempLabel(); });
-  document.getElementById(id).addEventListener("change", applyFilters);
-});
-document.getElementById("btn-reset-filters").addEventListener("click", ()=>{
-  document.getElementById("filter-year").value = "all";
-  document.getElementById("filter-month").value = "all";
-  document.getElementById("filter-hour-min").value = 0;
-  document.getElementById("filter-hour-max").value = 23;
-  const temps = RAW_DATA.map(d=>d.temp);
-  document.getElementById("filter-temp-min").value = Math.floor(Math.min(...temps));
-  document.getElementById("filter-temp-max").value = Math.ceil(Math.max(...temps));
-  updateHourLabel(); updateTempLabel();
-  applyFilters();
-});
-document.getElementById("btn-export-csv").addEventListener("click", exportFilteredCSV);
-document.getElementById("btn-export-csv-2").addEventListener("click", exportFilteredCSV);
-document.getElementById("scatter-x").addEventListener("change", renderScatter);
-document.getElementById("scatter-y").addEventListener("change", renderScatter);
-document.getElementById("btn-sim-reset").addEventListener("click", ()=>{
-  document.getElementById("sim-temp").value = 20;
-  document.getElementById("sim-hum").value = 84;
-  document.getElementById("sim-wind").value = 1.2;
-  document.getElementById("sim-precip").value = 0;
-  document.getElementById("sim-hour").value = 12;
-  document.getElementById("sim-month").value = new Date().getMonth()+1;
-  initSimulatorDefaults();
-});
-
-window.addEventListener("DOMContentLoaded", loadData);
 </script>
 </body>
 </html>
